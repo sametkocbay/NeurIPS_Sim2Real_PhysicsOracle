@@ -1,0 +1,88 @@
+# Final PhysicsOracle member (NeurIPS 2026 RealPDE Track 1). Train two members, seeds 3 and 4:
+#   python -m rpde.train --config configs/final.yaml --fold full --seed 3 --name fm_all_s3
+#   python -m rpde.train --config configs/final.yaml --fold full --seed 4 --name fm_all_s4
+# and ship the EMA snapshot of epoch 59 of each (runs/<name>/ep59.pth). See docs/TRAINING.md.
+core:
+  name: axial
+  kwargs:
+    d: 128             # token width
+    heads: 8
+    depth: 6           # axial transformer blocks
+    grad_checkpoint: false
+    patch_t: 20        # the 20 input frames are folded into one temporal token
+    t2c: true          # past frames -> channels
+    mlp_ratio: 8
+    norm: rms
+    film_shared: true  # one FiLM conditioning MLP shared by all blocks
+    spatial_attn: axial
+    patch_h: 1         # 1 x 2 spatial patches -> 32 x 32 tokens
+    patch_w: 2
+model:
+  shrink: false
+  gamma: 0.75          # fluctuation scale used for validation; the submission decodes at 0.70
+  baseline:            # advective (frozen-turbulence) baseline the network corrects
+    gamma0: 0.6
+    tau_star0: 0.3
+    damping: false
+    beta_mode: const
+    beta0: 0.75
+    U0: 0.129
+    w: 0.05
+data:
+  real_frac: 0.75      # 75 % real PIV windows, 25 % CFD windows per batch
+  sim_boost: 2.0
+  sim_stride: auto
+  sim_mask: true
+  sim_dropout: true
+  sim_noise: true
+  use_sim: true
+  batch_size: 8
+  windows_per_epoch: 6000
+  limit_regimes: null
+  val_domains:
+  - real
+  num_workers: 8
+  sim_clock: false
+  mirror_aug: 0.5      # mirror a training window in y (flow at -AoA) with p = 0.5
+  train_all: true      # train on 100 % of every trajectory (no frames held out)
+optim:
+  lr: 1.0e-3
+  weight_decay: 0.05
+  warmup_epochs: 5
+  epochs: 100          # cosine schedule over 100 epochs; the shipped weights are the EMA at epoch 59
+  grad_clip: 1.0
+  ema_decay: 0.9995
+  amp: true
+loss:
+  lambda_pin: 4.0      # quantile (pinball) loss of the band head
+  lambda_tke: 0.2
+  lambda_tmean: 0.0
+  lambda_probe: 0.0
+  pinball_detach_trunk: false
+  tke_horizon: flat
+  tke_horizon_c: 2.0
+  lambda_tke_full: null
+  lambda_err: 0.0
+  lambda_sps: 1.0      # differentiable SPS band reward, from epoch 40
+  sps_start_epoch: 40
+  sps_tau0: 0.02
+  sps_tau1: 0.001
+  sps_temp: 0.005
+  lambda_var: 0.0
+  var_eps: 0.0001
+  var_weight: uniform
+  score_aligned: false
+decode:
+  err_scale: false
+  err_scale_k: 1.0
+eval:
+  every_epochs: 1      # validation score is logged only; it does not steer training
+  patience: 999        # no early stopping
+  batch_size: null
+  save_every: 1
+  save_from: 59        # keep the EMA snapshot ep59.pth (the shipped epoch)
+  save_to: 59
+wandb:
+  enabled: false
+  group: null
+  tags: []

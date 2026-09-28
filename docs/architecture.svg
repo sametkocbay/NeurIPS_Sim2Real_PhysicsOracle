@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 1180" width="980" height="1180" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#44546a"/>
+    </marker>
+    <style>
+      .box{stroke:#44546a;stroke-width:1.4;rx:10;ry:10}
+      .t{font-size:15px;font-weight:bold;fill:#1d2733}
+      .s{font-size:12.5px;fill:#33404f}
+      .sh{font-size:11.5px;fill:#6b7785;font-family:Menlo,Consolas,monospace}
+      .edge{stroke:#44546a;stroke-width:1.6;fill:none;marker-end:url(#arr)}
+      .cond{stroke:#b5651d;stroke-width:1.6;fill:none;stroke-dasharray:6 4;marker-end:url(#arr)}
+      .lbl{font-size:13px;font-weight:bold;fill:#44546a}
+    </style>
+  </defs>
+
+  <text x="490" y="34" text-anchor="middle" font-size="21" font-weight="bold" fill="#1d2733">PhysicsOracle: one ensemble member, then the 2-member decode</text>
+
+  <!-- input -->
+  <rect class="box" x="300" y="56" width="380" height="58" fill="#e8f1fb"/>
+  <text class="t" x="490" y="80" text-anchor="middle">Input: 20 past PIV frames (u, v; p = 0)</text>
+  <text class="sh" x="490" y="101" text-anchor="middle">x: (B, 20, 32, 64, 3), physical m/s</text>
+  <path class="edge" d="M490,114 L490,140"/>
+
+  <!-- preproc -->
+  <rect class="box" x="230" y="142" width="520" height="92" fill="#eef6ec"/>
+  <text class="t" x="490" y="165" text-anchor="middle">Preproc (no parameters)</text>
+  <text class="s" x="490" y="186" text-anchor="middle">core mask (never-measured cells), freestream U estimated from the top rows,</text>
+  <text class="s" x="490" y="204" text-anchor="middle">nondimensional u/U, v/U, per-cell PIV drop-out maps, advection per frame a</text>
+  <text class="sh" x="490" y="224" text-anchor="middle">cond (B, 8) = [U, log dt*, a, mask centroid x/y, extent x/y, domain]</text>
+  <path class="edge" d="M490,234 L490,260"/>
+
+  <!-- baseline -->
+  <rect class="box" x="230" y="262" width="520" height="74" fill="#eef6ec"/>
+  <text class="t" x="490" y="285" text-anchor="middle">Advective baseline (physics prior, 2 learned scalars)</text>
+  <text class="s" x="490" y="305" text-anchor="middle">time mean + beta x last fluctuation convected downstream by gamma a k cells (trained: gamma 0.81, beta 0.05)</text>
+  <text class="sh" x="490" y="325" text-anchor="middle">base: (B, 2, 20, 32, 64) for the 20 future frames</text>
+  <path class="edge" d="M490,336 L490,362"/>
+
+  <!-- volume -->
+  <rect class="box" x="230" y="364" width="520" height="74" fill="#eef6ec"/>
+  <text class="t" x="490" y="387" text-anchor="middle">Space-time input volume</text>
+  <text class="s" x="490" y="407" text-anchor="middle">u, v (observed past | baseline future), mask, drop-out maps, x, y, is-future</text>
+  <text class="sh" x="490" y="427" text-anchor="middle">vol: (B, 8, 40, 32, 64)</text>
+  <path class="edge" d="M490,438 L490,464"/>
+
+  <!-- core -->
+  <rect x="160" y="466" width="660" height="330" rx="14" ry="14" fill="#fbf4e8" stroke="#b5651d" stroke-width="1.8"/>
+  <text x="490" y="490" text-anchor="middle" font-size="16" font-weight="bold" fill="#8a4a12">Axial transformer core (3.44 M parameters)</text>
+
+  <rect class="box" x="200" y="502" width="580" height="56" fill="#ffffff"/>
+  <text class="s" x="490" y="524" text-anchor="middle"><tspan font-weight="bold">Tokenise:</tspan> fold the 20 past frames into channels, Conv3d patch (t 20, h 1, w 2)</text>
+  <text class="sh" x="490" y="545" text-anchor="middle">-> (B, 128, 1, 32, 32): 1024 tokens of width 128 + position embedding</text>
+  <path class="edge" d="M490,558 L490,578"/>
+
+  <rect class="box" x="200" y="580" width="580" height="98" fill="#ffffff"/>
+  <text class="s" x="490" y="603" text-anchor="middle"><tspan font-weight="bold">6 x Axial block</tspan> (RMSNorm, pre-norm residual)</text>
+  <text class="s" x="490" y="624" text-anchor="middle">attention along x (rows)  ->  attention along y (columns)  ->  MLP (ratio 8)</text>
+  <text class="s" x="490" y="645" text-anchor="middle">each sub-layer modulated by FiLM (scale, shift, gate) from the shared cond MLP</text>
+  <text class="sh" x="490" y="666" text-anchor="middle">8 heads, math SDPA</text>
+  <path class="edge" d="M490,678 L490,698"/>
+
+  <rect class="box" x="200" y="700" width="580" height="80" fill="#ffffff"/>
+  <text class="s" x="490" y="722" text-anchor="middle"><tspan font-weight="bold">Un-patch</tspan> (ConvTranspose3d) back to every future frame and cell</text>
+  <text class="s" x="490" y="743" text-anchor="middle"><tspan font-weight="bold">Head</tspan> (1x1): mean correction (2) + zero-time-mean fluctuation (2)</text>
+  <text class="s" x="490" y="763" text-anchor="middle">+ 5 non-crossing residual quantiles per channel (u, v)</text>
+  <path class="edge" d="M490,796 L490,822"/>
+
+  <!-- conditioning side path -->
+  <rect class="box" x="16" y="580" width="126" height="98" fill="#fbf4e8"/>
+  <text class="t" x="79" y="608" text-anchor="middle">cond MLP</text>
+  <text class="s" x="79" y="630" text-anchor="middle">8 -> 64</text>
+  <text class="s" x="79" y="650" text-anchor="middle">shared by</text>
+  <text class="s" x="79" y="668" text-anchor="middle">all blocks</text>
+  <path class="cond" d="M230,210 L79,210 L79,578"/>
+  <path class="cond" d="M142,629 L198,629"/>
+
+  <!-- member output -->
+  <rect class="box" x="230" y="824" width="520" height="74" fill="#e8f1fb"/>
+  <text class="t" x="490" y="847" text-anchor="middle">Member output (x 2 members: seeds 3 and 4, epoch 59)</text>
+  <text class="s" x="490" y="867" text-anchor="middle">mean = (baseline + correction) x U;   fluctuation f;   quantiles Q</text>
+  <text class="sh" x="490" y="887" text-anchor="middle">mean, f: (B, 20, 32, 64, 2);  Q: (B, 20, 32, 64, 2, 5)</text>
+  <path class="edge" d="M490,898 L490,924"/>
+
+  <!-- ensemble decode -->
+  <rect x="160" y="926" width="660" height="166" rx="14" ry="14" fill="#f1ecf8" stroke="#6a4c93" stroke-width="1.8"/>
+  <text x="490" y="950" text-anchor="middle" font-size="16" font-weight="bold" fill="#4b2f73">Ensemble decode (compiled with the members into one AOT graph)</text>
+  <text class="s" x="490" y="975" text-anchor="middle"><tspan font-weight="bold">mean</tspan> and <tspan font-weight="bold">quantiles</tspan>: averaged over the 2 members</text>
+  <text class="s" x="490" y="997" text-anchor="middle"><tspan font-weight="bold">fluctuation</tspan>: member average rescaled per cell to the members' mean energy (energy-preserving "B")</text>
+  <text class="s" x="490" y="1019" text-anchor="middle">prediction = mean + 0.70 x fluctuation;  gated decode for Re above the training range</text>
+  <text class="s" x="490" y="1041" text-anchor="middle"><tspan font-weight="bold">band</tspan>: centred on the mean, width = argmax of the expected SPS reward under Q, x 0.95</text>
+  <text class="sh" x="490" y="1064" text-anchor="middle">p channel = 0; lower &lt;= upper enforced</text>
+  <path class="edge" d="M490,1092 L490,1118"/>
+
+  <rect class="box" x="300" y="1120" width="380" height="50" fill="#e8f1fb"/>
+  <text class="t" x="490" y="1142" text-anchor="middle">prediction, lower, upper</text>
+  <text class="sh" x="490" y="1161" text-anchor="middle">each (B, 20, 32, 64, 3) float32</text>
+
+  <text class="lbl" x="852" y="170" text-anchor="start">physics</text>
+  <text class="lbl" x="852" y="186" text-anchor="start">scaffold</text>
+  <text class="lbl" x="852" y="620" text-anchor="start">learned</text>
+  <text class="lbl" x="852" y="1000" text-anchor="start">decode</text>
+</svg>
