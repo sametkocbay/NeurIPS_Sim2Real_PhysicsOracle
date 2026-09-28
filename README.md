@@ -4,6 +4,10 @@
 
 **Forecasting real turbulent airfoil flow from simulation and experiment**
 
+Maximilian Leutschafft<sup>1</sup> · Oscar Breiner<sup>1</sup> · Samet Kocbay<sup>1</sup>
+
+<sup>1</sup>Technical University of Munich (M.Sc. students)
+
 Team PhysicsOracle · NeurIPS 2026 RealPDE Competition, Track 1: Simulation-to-Real Transfer Learning
 
 ![final score](https://img.shields.io/badge/hidden--set%20final%20score-82.01-1a7f37)
@@ -124,24 +128,7 @@ best epoch on every held-out row at epoch 59. Compared with the same model witho
 recipe (mirror augmentation and all-frame training) scores +0.12 on the held-out high-Re corner rows and is on par on
 held-out Reynolds rows; mirror augmentation alone adds +0.44 per model at an angle of attack beyond the training range.
 
-## 4 &nbsp; Negative results
-
-Each was measured and not adopted. Scores are hidden-set final scores where a submission exists, otherwise a held-out
-proxy (leaderboard weighting on held-out Reynolds rows, one or two seeds).
-
-| idea | outcome |
-|---|---|
-| float16 outputs to halve the transfer | inference inside `predict()` faster, but the server's own handling of float16 arrays is slower: time -0.80, final -0.06 (ENS2c) |
-| mixed ensemble with a 1 x 1-patch member | better on held-out rows, worse on the hidden set: final -0.05 vs ENS2 (ENS4g) |
-| third ensemble member | held-out +0.01; the extra inference time costs more |
-| full spatial attention instead of axial | lower as single models and as ensembles, and slower |
-| training longer / last epoch | epoch 100 vs 59: held-out -0.16 on average, -0.26 on the extrapolated Reynolds row |
-| post-hoc CNN corrector of the prediction | +0.05 on training regimes, +0.00 on held-out rows |
-| learned per-cell energy / fluctuation-scale heads | at most +0.005 held-out |
-| input noise, drop-out, context truncation, mask augmentation | neutral or negative on held-out rows |
-| test-time mirror averaging | helps only mirror-trained single models (+0.04 to +0.10), at twice the compute |
-
-## 5 &nbsp; Reproducing
+## 4 &nbsp; Reproducing
 
 ```bash
 uv sync                                                    # python 3.10, torch 2.2.2 + CUDA 12.1, numpy 1.26
