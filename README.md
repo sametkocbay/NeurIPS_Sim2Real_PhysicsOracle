@@ -13,13 +13,16 @@ Team PhysicsOracle · NeurIPS 2026 RealPDE Competition, Track 1: Simulation-to-R
 
 </div>
 
-Given 20 frames of a particle-image-velocimetry (PIV) measurement of the flow around a NACA 4418 airfoil, the task is
-to forecast the next 20 frames together with a calibrated uncertainty band. Our model combines a parameter-free physics
-scaffold (freestream estimation, mask geometry, a convected-turbulence baseline) with a 3.4 M-parameter axial
-transformer that predicts the correction to that baseline, a zero-mean fluctuation field and residual quantiles. It is
-trained jointly on real PIV and on simulation made to resemble PIV. Two seeds are combined by an energy-preserving
-ensemble decode and compiled ahead of time into a single graph. The final submission scored **82.01** on the hidden
-development set, **+4.38** over the physics baseline alone.
+This repository holds the model of team PhysicsOracle for the NeurIPS 2026 RealPDE Competition, Track 1:
+Simulation-to-Real Transfer Learning ([Codabench](https://www.codabench.org/), [dataset](https://huggingface.co/datasets/AI4Science-WestlakeU/RealPDE-Competition-Data)).
+The task is to forecast 20 frames of measured (PIV) flow around an airfoil, with uncertainty bands, from simulated and
+measured training data. Our final submission scored 82.01 on the hidden development set.
+
+Our model combines a parameter-free physics scaffold (freestream estimation, mask geometry, a convected-turbulence
+baseline) with a 3.4 M-parameter axial transformer that predicts the correction to that baseline, a zero-mean
+fluctuation field and residual quantiles. It is trained jointly on real PIV and on simulation made to resemble PIV.
+Two seeds are combined by an energy-preserving ensemble decode and compiled ahead of time into a single graph; the
+result is **+4.38** over the physics baseline alone.
 
 <p align="center">
 <picture>
@@ -27,7 +30,8 @@ development set, **+4.38** over the physics baseline alone.
   <img src="docs/figures/progress.svg" alt="Hidden-set score of all 17 submissions" width="100%">
 </picture>
 <br><sub><b>Figure 1.</b> Hidden-set final score of all 17 submissions of the development phase (9 to 27 September
-2026). Line: best score so far; red: submissions that lowered the score. Right: the same data from 16 September.</sub>
+2026). Line: best score so far; filled markers: new best; open markers: submissions that did not improve (red labels:
+the cause). The y axis changes scale at 81 to resolve the later, smaller steps.</sub>
 </p>
 
 ---
