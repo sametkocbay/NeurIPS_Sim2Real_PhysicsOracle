@@ -1,0 +1,18 @@
+id,name,datetime,final_score,note
+920479,S1,2026-09-09 21:57,77.63333,advective physics baseline (no learned parameters)
+920997,S2,2026-09-10 09:15,76.99728,learned core at initialisation (baseline accuracy; slower)
+922187,S3,2026-09-11 08:52,79.91025,axial transformer trained on all data; fast inference path
+923956,S4,2026-09-12 17:29,80.53093,2x2 patches with time folded into channels (faster)
+924736,S6lr,2026-09-13 12:21,80.80894,learning rate 6e-4
+926009,S7cal,2026-09-14 13:45,80.76247,pinball + SPS reward (model without the top Re row)
+926712,S7final,2026-09-16 09:35,81.29104,pinball + SPS band reward on all data
+929212,S9,2026-09-17 02:47,81.27712,ahead-of-time compiled graph; gated decode
+931399,S11s2,2026-09-18 08:21,81.60695,MLP ratio 8
+933178,S11s2b,2026-09-19 10:58,81.69621,compiled batch-5/10 graphs; warm-up at batch 5
+934923,S12,2026-09-20 10:47,81.71940,decode retune; faster predict()
+936631,S13,2026-09-21 09:31,81.81809,all 20 frames in one temporal token (width 192; 10.4 M parameters)
+938952,S14,2026-09-22 08:10,81.83962,1x2 spatial patches (1024 tokens); 3.44 M parameters
+941251,ENS2,2026-09-23 14:35,81.93145,two-seed ensemble in one compiled graph
+942789,ENS2c,2026-09-24 12:38,81.87141,band scale 0.95 + float16 outputs (slower on the server)
+946030,ENS4g,2026-09-26 08:14,81.88462,mixed 1x1/1x2-patch ensemble; retuned gate
+948641,FINAL,2026-09-27 21:45,82.01030,mirror augmentation; 100 % data; energy-preserving combine; epoch 59
