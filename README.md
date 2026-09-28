@@ -2,13 +2,13 @@
 
 # PhysicsOracle
 
-**Forecasting real turbulent airfoil flow from simulation and experiment**
+**NeurIPS 2026 RealPDE Challenge, Track 1: Simulation-to-Real · Physics-Scaffolded Axial Transformer**
 
 Maximilian Leutschafft<sup>1</sup> · Oscar Breiner<sup>1</sup> · Samet Kocbay<sup>1</sup>
 
 <sup>1</sup>Technical University of Munich (M.Sc. students)
 
-Team PhysicsOracle · NeurIPS 2026 RealPDE Competition, Track 1: Simulation-to-Real Transfer Learning
+Team PhysicsOracle
 
 ![final score](https://img.shields.io/badge/hidden--set%20final%20score-82.01-1a7f37)
 ![parameters](https://img.shields.io/badge/parameters-2%20%C3%97%203.44%20M-0969da)

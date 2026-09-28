@@ -27,16 +27,11 @@ FIG = ROOT / "docs" / "figures"
 
 THEMES = {  # warm neutrals with a clay accent
     "light": dict(fg="#28261f", muted="#6f6b5e", faint="#a8a494", grid="#e4e1d6", accent="#c96442",
-                  dot="#c96442", other="#8f8b7c", bad="#b54a4a", final="#c96442",
-                  shade=["#f5f3ec", "#fbfaf6"], bg="#ffffff"),
+                  dot="#c96442", other="#8f8b7c", bad="#b54a4a", final="#c96442", bg="#ffffff"),
     "dark": dict(fg="#ece9df", muted="#aaa597", faint="#6f6b5e", grid="#3a3830", accent="#e0805f",
-                 dot="#e0805f", other="#9a968a", bad="#e07a72", final="#e0805f",
-                 shade=["#23221d", "#1b1a16"], bg="#141310"),
+                 dot="#e0805f", other="#9a968a", bad="#e07a72", final="#e0805f", bg="#141310"),
 }
 
-# phases by submission index (inclusive) and their label
-PHASES = [(0, 1, "physics\nbaseline"), (2, 4, "learned\nmodel"), (5, 6, "band\nloss"),
-          (7, 10, "compilation\n& decode"), (11, 12, "architec-\nture"), (13, 16, "ensembles &\nsim-to-real")]
 # annotation per submission: (text, offset in points (dx, dy), horizontal alignment); None = marker only
 LABELS = {
     "S1": ("physics baseline", (6, 22), "left"),
@@ -85,14 +80,6 @@ def progress():
         fig.patch.set_facecolor(c["bg"])
         ax.set_facecolor(c["bg"])
         ax.set_yscale("function", functions=(_fwd, _inv))
-        # phase bands and labels
-        for k, (a, b, lab) in enumerate(PHASES):
-            ax.axvspan(a - 0.5, b + 0.5, color=c["shade"][k % 2], lw=0, zorder=0)
-            ax.text((a + b) / 2, 1.015, lab.replace("\n", " ").replace("- ", ""), ha="center", va="bottom",
-                    fontsize=8.4, color=c["muted"], transform=ax.get_xaxis_transform(), clip_on=False)
-            if k:
-                ax.plot([a - 0.5, a - 0.5], [1.0, 1.06], color=c["grid"], lw=0.8,
-                        transform=ax.get_xaxis_transform(), clip_on=False)
         # horizontal grid and the scale break
         for yt in (77, 78, 79, 80, 81.2, 81.4, 81.6, 81.8, 82.0):
             ax.axhline(yt, color=c["grid"], lw=0.6, zorder=1)
