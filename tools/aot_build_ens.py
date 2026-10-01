@@ -6,7 +6,8 @@ against the eager EnsPredict: max |dpred|, |dband|, timing.  Needs a CUDA GPU, t
 C++ compiler; run the batch groups one after another (parallel builds into one directory race on temp files).
 
     python tools/aot_build_ens.py build/aot weights/fm_all_s3_ep59.pth,weights/fm_all_s4_ep59.pth \
-        gamma=0.70 band_scale=0.95 energy_preserve=1 batches=5,10 [inputs=build/sample_inputs.npy] [autotune=1]
+        gamma=0.70 band_scale=0.95 energy_preserve=1 gated=build/gate.json batches=5,10 \
+        [inputs=build/sample_inputs.npy] [autotune=1]
 Writes <out_dir>/predict_b{B}.so, <out_dir>/kernels/*.cubin and <out_dir>/build_report_<batches>.json.
 """
 import glob, json, os, re, shutil, sys, time
@@ -22,8 +23,9 @@ opts = dict(a.split("=", 1) for a in sys.argv[3:])
 gamma = float(opts.get("gamma", "0.70"))
 band_scale = float(opts.get("band_scale", "1.0"))
 energy_preserve = opts.get("energy_preserve", "0") == "1"
-gated = json.loads(opts.get("gated", "{}"))
-mirror_views = opts.get("mirror_views", "0") == "1"          # overrides on S12_PARAMS, e.g. gated='{"c1":-0.2,"lam":0.1,"c1_out":0.0}'
+gated = opts.get("gated", "{}")                           # JSON, or a JSON file (tools/fit_gate.py --out): gate parameters
+gated = json.load(open(gated)) if os.path.isfile(gated) else json.loads(gated)
+mirror_views = opts.get("mirror_views", "0") == "1"
 batches = [int(b) for b in opts.get("batches", "5").split(",")]
 autotune = opts.get("autotune", "1") == "1"
 os.makedirs(f"{out_dir}/kernels", exist_ok=True)

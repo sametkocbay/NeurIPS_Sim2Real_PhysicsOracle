@@ -138,9 +138,10 @@ python -m rpde.train --config configs/final.yaml --fold full --seed 3 --name fm_
 python -m rpde.train --config configs/final.yaml --fold full --seed 4 --name fm_all_s4
 
 python tools/make_sample_inputs.py
+python tools/fit_gate.py --out build/gate.json --check   # gated decode: tables from train_real + coefficients
 for b in 5,10 2,4 3,1; do
   python tools/aot_build_ens.py build/aot runs/fm_all_s3/ep59.pth,runs/fm_all_s4/ep59.pth \
-      gamma=0.70 band_scale=0.95 energy_preserve=1 batches=$b
+      gamma=0.70 band_scale=0.95 energy_preserve=1 gated=build/gate.json batches=$b
 done
 python tools/pack_submission.py --aot build/aot --members runs/fm_all_s3/ep59.pth runs/fm_all_s4/ep59.pth
 ```

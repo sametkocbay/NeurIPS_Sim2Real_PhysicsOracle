@@ -71,6 +71,49 @@ def ens_cfg_from_reports(aot_dir: Path) -> dict:
     return {"gamma": g, "band_scale": s, "energy_preserve": e, "gated": json.loads(gd), "mirror_views": mv}
 
 
+def assemble(aot: Path, members, stage: Path, ens_cfg: dict | None = None) -> dict:
+    """Write the package layout (submission.py, ens_cfg.json, model_<i>.pth, rpde/, aot/) into `stage`.
+
+    With `ens_cfg` given, a package without compiled graphs is allowed (the runtime then runs the eager fallback,
+    configured from that ens_cfg); otherwise the build reports define the decode settings."""
+    aot, stage = Path(aot), Path(stage)
+    stage.mkdir(parents=True, exist_ok=True)
+    shutil.copy(ROOT / "submission" / "submission.py", stage / "submission.py")
+    has_aot = bool(sorted(aot.glob("build_report_*.json")))
+    cfg = ens_cfg_from_reports(aot) if has_aot or ens_cfg is None else dict(ens_cfg)
+    if has_aot and ens_cfg is not None:
+        assert cfg == ens_cfg, f"compiled graphs were built with {cfg}, expected {ens_cfg}"
+    (stage / "ens_cfg.json").write_text(json.dumps(cfg))
+    print("ens_cfg.json:", cfg)
+    for i, ck in enumerate(members):
+        strip(ck, stage / f"model_{i}.pth")
+        print(f"model_{i}.pth <- {ck}")
+    for f in RUNTIME_RPDE:
+        (stage / "rpde" / f).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(ROOT / "rpde" / f, stage / "rpde" / f)
+    (stage / "aot" / "kernels").mkdir(parents=True, exist_ok=True)
+    sos = sorted(aot.glob("predict_b*.so"))
+    assert sos or ens_cfg is not None, f"no predict_b*.so in {aot}"
+    if not sos:
+        print(f"WARNING: no compiled graphs in {aot}; the package runs the eager fallback")
+    for so in sos:
+        shutil.copy(so, stage / "aot" / so.name)
+    for cb in (aot / "kernels").glob("*.cubin"):
+        shutil.copy(cb, stage / "aot" / "kernels" / cb.name)
+    return cfg
+
+
+def clean_room(pkg: Path) -> str:
+    """Import `pkg`/submission.py in a fresh interpreter (no repository on the path) and call predict() twice."""
+    r = subprocess.run([sys.executable, "-c", CLEAN_ROOM, str(pkg)], env=dict(os.environ, PYTHONPATH=""),
+                       cwd=str(pkg), capture_output=True, text=True, timeout=900)
+    print(r.stdout.strip())
+    if r.returncode != 0:
+        print(r.stderr)
+        raise SystemExit("clean-room test FAILED")
+    return r.stdout.strip()
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--aot", required=True, help="directory written by tools/aot_build_ens.py")
@@ -80,23 +123,7 @@ def main():
     aot, out = Path(a.aot), Path(a.out)
     stage = Path(tempfile.mkdtemp(prefix="rpde_pack_"))
     try:
-        shutil.copy(ROOT / "submission" / "submission.py", stage / "submission.py")
-        cfg = ens_cfg_from_reports(aot)
-        (stage / "ens_cfg.json").write_text(json.dumps(cfg))
-        print("ens_cfg.json:", cfg)
-        for i, ck in enumerate(a.members):
-            strip(ck, stage / f"model_{i}.pth")
-            print(f"model_{i}.pth <- {ck}")
-        for f in RUNTIME_RPDE:
-            (stage / "rpde" / f).parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy(ROOT / "rpde" / f, stage / "rpde" / f)
-        (stage / "aot" / "kernels").mkdir(parents=True)
-        sos = sorted(aot.glob("predict_b*.so"))
-        assert sos, f"no predict_b*.so in {aot}"
-        for so in sos:
-            shutil.copy(so, stage / "aot" / so.name)
-        for cb in (aot / "kernels").glob("*.cubin"):
-            shutil.copy(cb, stage / "aot" / "kernels" / cb.name)
+        assemble(aot, a.members, stage)
         out.parent.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
             for f in sorted(stage.rglob("*")):
@@ -105,6 +132,7 @@ def main():
     finally:
         shutil.rmtree(stage, ignore_errors=True)
 
+    sos = sorted(aot.glob("predict_b*.so"))
     extracted = sum(i.file_size for i in zipfile.ZipFile(out).infolist())
     sha = hashlib.sha256(out.read_bytes()).hexdigest()[:12]
     print(f"zip: {out}  ({out.stat().st_size / 1e6:.1f} MB, {extracted / 1e6:.1f} MB extracted)  sha256[:12]={sha}  "
@@ -115,12 +143,7 @@ def main():
     try:
         with zipfile.ZipFile(out) as z:
             z.extractall(tmp)
-        r = subprocess.run([sys.executable, "-c", CLEAN_ROOM, str(tmp)], env=dict(os.environ, PYTHONPATH=""),
-                           cwd=str(tmp), capture_output=True, text=True, timeout=900)
-        print(r.stdout.strip())
-        if r.returncode != 0:
-            print(r.stderr)
-            raise SystemExit("clean-room test FAILED")
+        clean_room(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

@@ -17,12 +17,17 @@ own training, or directly from the included `weights/`.
 ```bash
 # 1. real example windows for tracing, autotuning and the correctness check (needs data/cache32, see TRAINING.md)
 python tools/make_sample_inputs.py                        # -> build/sample_inputs.npy  (15 windows)
+# the gated decode's parameters: its data tables (largest training Re and mask-geometry centroids per angle), fitted
+# from train_real, and its coefficients (configs/final.yaml, submission.gate); --check compares the tables with those
+# of the Codabench submission (equal to float32 precision)
+python tools/fit_gate.py --out build/gate.json --check
 
 # 2. compile the ensemble for batch sizes 1, 2, 3, 4, 5 and 10 (about 5 min per group).
 #    Run the groups one after another: parallel builds into one directory collide on temporary files.
 M=weights/fm_all_s3_ep59.pth,weights/fm_all_s4_ep59.pth    # or runs/fm_all_s3/ep59.pth,runs/fm_all_s4/ep59.pth
 for b in 5,10 2,4 3,1; do
-  python tools/aot_build_ens.py build/aot $M gamma=0.70 band_scale=0.95 energy_preserve=1 batches=$b
+  python tools/aot_build_ens.py build/aot $M gamma=0.70 band_scale=0.95 energy_preserve=1 \
+      gated=build/gate.json batches=$b
 done
 
 # 3. package + clean-room test
@@ -44,7 +49,7 @@ their CUDA kernels.
 
 ```
 submission.py            runtime: predict(input_array, metadata) -> {"prediction", "lower", "upper"}
-ens_cfg.json             {"gamma": 0.7, "band_scale": 0.95, "energy_preserve": true, "gated": {}, "mirror_views": false}
+ens_cfg.json             {"gamma": 0.7, "band_scale": 0.95, "energy_preserve": true, "gated": {<gate tables>}, "mirror_views": false}
 model_0.pth, model_1.pth members (EMA weights + architecture description)
 aot/predict_b{1,2,3,4,5,10}.so, aot/kernels/*.cubin
 rpde/                    the modules the eager fallback needs

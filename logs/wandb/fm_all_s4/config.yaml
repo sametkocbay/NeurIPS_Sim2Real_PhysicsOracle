@@ -1,0 +1,256 @@
+_wandb:
+    value:
+        cli_version: 0.30.0
+        e:
+            8arv8bdaptcbp2a451lis3to5weq62o2:
+                args:
+                    - --config
+                    - configs/a_small.yaml
+                    - --fold
+                    - R-top
+                    - --seed
+                    - "2"
+                    - --set
+                    - core.kwargs.patch_t=20
+                    - --set
+                    - core.kwargs.t2c=true
+                    - --set
+                    - core.kwargs.grad_checkpoint=false
+                    - --set
+                    - core.kwargs.mlp_ratio=8
+                    - --set
+                    - core.kwargs.d=128
+                    - --set
+                    - core.kwargs.heads=8
+                    - --set
+                    - core.kwargs.depth=6
+                    - --set
+                    - core.kwargs.norm=rms
+                    - --set
+                    - core.kwargs.film_shared=true
+                    - --set
+                    - core.kwargs.spatial_attn=full
+                    - --set
+                    - data.windows_per_epoch=3000
+                    - --set
+                    - data.num_workers=8
+                    - --set
+                    - optim.lr=1e-3
+                    - --set
+                    - optim.ema_decay=0.9995
+                    - --set
+                    - optim.epochs=100
+                    - --set
+                    - loss.lambda_pin=4.0
+                    - --set
+                    - loss.lambda_sps=1.0
+                    - --set
+                    - loss.sps_start_epoch=40
+                    - --set
+                    - loss.sps_tau0=0.02
+                    - --set
+                    - loss.sps_tau1=0.001
+                    - --set
+                    - loss.sps_temp=0.005
+                    - --set
+                    - data.sim_clock=false
+                    - --wandb
+                    - --set
+                    - wandb.group=final
+                    - --name
+                    - fm_all_s4
+                    - --fold
+                    - full
+                    - --set
+                    - data.windows_per_epoch=6000
+                    - --set
+                    - core.kwargs.patch_h=1
+                    - --set
+                    - core.kwargs.patch_w=2
+                    - --set
+                    - core.kwargs.spatial_attn=axial
+                    - --set
+                    - data.mirror_aug=0.5
+                    - --set
+                    - eval.every_epochs=1
+                    - --set
+                    - eval.patience=999
+                    - --set
+                    - eval.save_every=1
+                    - --set
+                    - eval.save_from=35
+                    - --set
+                    - eval.save_to=75
+                    - --set
+                    - data.train_all=true
+                    - --seed
+                    - "4"
+                cpu_count: 64
+                cpu_count_logical: 128
+                cudaVersion: "13.2"
+                disk:
+                    /:
+                        total: "107374182400"
+                        used: "8183500800"
+                email: <redacted>
+                executable: /opt/conda/bin/python
+                gpu: NVIDIA GeForce RTX 4090
+                gpu_count: 4
+                gpu_nvidia:
+                    - architecture: Ada
+                      cudaCores: 16384
+                      memoryTotal: "51527024640"
+                      name: NVIDIA GeForce RTX 4090
+                      uuid: GPU-1cbe2a1b-04f2-6975-6d89-9ef3e853eb57
+                    - architecture: Ada
+                      cudaCores: 16384
+                      memoryTotal: "51527024640"
+                      name: NVIDIA GeForce RTX 4090
+                      uuid: GPU-7c30d775-247b-cda3-bc53-2af225d62d53
+                    - architecture: Ada
+                      cudaCores: 16384
+                      memoryTotal: "51527024640"
+                      name: NVIDIA GeForce RTX 4090
+                      uuid: GPU-c7c17fc9-363f-8c0b-b847-9d8a4071cf06
+                    - architecture: Ada
+                      cudaCores: 16384
+                      memoryTotal: "51527024640"
+                      name: NVIDIA GeForce RTX 4090
+                      uuid: GPU-e55885fe-0f0f-9263-75a0-fc6d21ea5c97
+                host: a45ec759b3ce
+                memory:
+                    total: "540640866304"
+                os: Linux-5.15.0-190-generic-x86_64-with-glibc2.35
+                program: -m rpde.train
+                python: CPython 3.10.14
+                root: /workspace/NIC/runs/fm_all_s4
+                startedAt: "2026-09-27T14:41:55.857721Z"
+                writerId: 8arv8bdaptcbp2a451lis3to5weq62o2
+        m: []
+        python_version: 3.10.14
+        t:
+            "1":
+                - 1
+            "2":
+                - 1
+            "3":
+                - 2
+                - 13
+                - 15
+                - 16
+                - 61
+            "4": 3.10.14
+            "5": 0.30.0
+            "12": 0.30.0
+            "13": linux-x86_64
+core:
+    value:
+        kwargs:
+            d: 128
+            depth: 6
+            film_shared: true
+            grad_checkpoint: false
+            heads: 8
+            mlp_ratio: 8
+            norm: rms
+            patch_h: 1
+            patch_t: 20
+            patch_w: 2
+            spatial_attn: axial
+            t2c: true
+        name: axial
+data:
+    value:
+        batch_size: 8
+        limit_regimes: null
+        mirror_aug: 0.5
+        num_workers: 8
+        real_frac: 0.75
+        sim_boost: 2
+        sim_clock: false
+        sim_dropout: true
+        sim_mask: true
+        sim_noise: true
+        sim_stride: auto
+        train_all: true
+        use_sim: true
+        val_domains:
+            - real
+        windows_per_epoch: 6000
+decode:
+    value:
+        err_scale: false
+        err_scale_k: 1
+distill:
+    value:
+        alpha: 0.7
+        amp: true
+        fast: true
+        mix_pred: false
+        mode: mean+Q
+        teacher_ckpt: best
+        teacher_runs: null
+eval:
+    value:
+        batch_size: null
+        every_epochs: 1
+        patience: 999
+        save_every: 1
+        save_from: 35
+        save_to: 75
+loss:
+    value:
+        lambda_err: 0
+        lambda_es: 0
+        lambda_map: 0
+        lambda_p: 0
+        lambda_pin: 4
+        lambda_probe: 0
+        lambda_sps: 1
+        lambda_tke: 0.2
+        lambda_tke_full: null
+        lambda_tmean: 0
+        lambda_var: 0
+        lambda_wta: 0
+        map_lambda_log: 0.01
+        map_ramp_epochs: 10
+        map_start_epoch: 40
+        pinball_detach_trunk: false
+        score_aligned: false
+        sps_start_epoch: 40
+        sps_tau0: 0.02
+        sps_tau1: 0.001
+        sps_temp: 0.005
+        tke_horizon: flat
+        tke_horizon_c: 2
+        var_eps: 0.0001
+        var_weight: uniform
+        wta_all: 0.05
+model:
+    value:
+        baseline:
+            U0: 0.129
+            beta_mode: const
+            beta0: 0.75
+            damping: false
+            gamma0: 0.6
+            tau_star0: 0.3
+            w: 0.05
+        gamma: 0.75
+        shrink: false
+optim:
+    value:
+        amp: true
+        ema_decay: 0.9995
+        epochs: 100
+        grad_clip: 1
+        lr: "1e-3"
+        warmup_epochs: 5
+        weight_decay: 0.05
+wandb:
+    value:
+        enabled: false
+        group: final
+        tags:
+            - coreA
+            - small

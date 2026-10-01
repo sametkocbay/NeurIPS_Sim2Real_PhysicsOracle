@@ -1,7 +1,27 @@
+# data, training runs and build products (all reproducible)
 data/
 runs/
 build/
 dist/
+/wandb/
+
+# the package that ran on Codabench (127 MB of weights and compiled graphs; kept locally only)
+codebench_final_submission/
+
+# python
 __pycache__/
 *.pyc
 .venv/
+*.egg-info/
+
+# editors and OS
+.DS_Store
+.idea/
+.vscode/
+
+# credentials
+.env
+*.token
+
+# personal review checklist
+REVIEW_TODO.md

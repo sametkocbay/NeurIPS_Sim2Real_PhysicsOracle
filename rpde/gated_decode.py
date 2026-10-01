@@ -20,26 +20,12 @@ import torch
 
 from rpde.constants import U_PER_RE
 
-__all__ = ["S9_PARAMS", "S12_PARAMS", "gated_decode"]
+__all__ = ["GATE_TABLES", "GATE_COEFFS", "gated_decode"]
 
-# Full-corpus tables (all 81 real recordings minus BAD_REAL): the column tops and the AoA-geometry centroids
-# (mean cond[3:7] per AoA over the 3 dumped windows of every recording) + the per-feature std over those windows.
-# Fitted offline on the training regimes (per-AoA mask centroids and the top training Re per AoA).
-S9_PARAMS: Dict[str, object] = dict(
-    aoa_keys=[0, 5, 10, 15, 20],
-    tops=[26700.0, 21600.0, 26700.0, 26700.0, 25425.0],
-    centroids=[[0.10816839, 0.74321777, 0.31361237, 0.51906127], [0.1081567, 0.72691208, 0.32690847, 0.53917056], [0.09397534, 0.70970106, 0.31216949, 0.55286729], [0.09518676, 0.71980542, 0.32413173, 0.5811128], [0.0908691, 0.68951124, 0.31613749, 0.63575274]],   # (5, 4)
-    sd=[0.00957239, 0.02040497, 0.01088485, 0.03987769],   # (4,)
-    c1=-0.6, decay_lo=0.0, decay_hi=1.75,
-    lam=0.15,
-    re_step=1275.0,
-)
-
-# S12 decode: the S9 tables plus two tweaks (fitted offline).
-# A: a larger shrink beyond the decay gate (lam_far 0.25) -> R-corner +0.015.  B: a small ungated lead decay on the
-# windows the gate leaves out (c1_out -0.2) -> in-regime +0.010/+0.011, R-mid-a +0.015, R-corner -0.007.
-# Together: R-top unchanged (the gate never fires there), R-corner +0.008, in-regime +0.010, R-mid-a +0.015.
-S12_PARAMS: Dict[str, object] = dict(S9_PARAMS, lam_far=0.25, c1_out=-0.2)
+# All parameters are passed in (`params`): the data tables, fitted from train_real by tools/fit_gate.py, and the
+# decode coefficients, set in configs/final.yaml (submission.gate). tools/fit_gate.py --out writes both.
+GATE_TABLES = ("aoa_keys", "tops", "centroids", "sd")
+GATE_COEFFS = ("c1", "decay_lo", "decay_hi", "lam", "lam_far", "c1_out", "re_step")
 
 
 def gated_decode(pred: torch.Tensor, mean: torch.Tensor, x: torch.Tensor, U: torch.Tensor, m_core: torch.Tensor,

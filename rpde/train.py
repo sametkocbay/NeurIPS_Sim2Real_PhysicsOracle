@@ -968,6 +968,12 @@ def main(argv=None) -> str:
         if bad >= int(ecfg["patience"]):
             log(f"[stop] no val improvement for {bad} validations (best epoch {best_epoch})")
             break
+        # eval.stop_after (default off): end the run after this many epochs; the learning-rate schedule still spans
+        # optim.epochs, so the weights up to that epoch are those of the full-length run
+        _stop = int(ecfg.get("stop_after", 0) or 0)
+        if _stop > 0 and epoch + 1 >= _stop:
+            log(f"[stop] stop_after={_stop}: {epoch + 1} of {epochs} scheduled epochs done")
+            break
         # RPDE_TIME_BUDGET_MIN (default off): stop cleanly before a wall-clock limit;
         # the next chunk resumes exactly from last.pth (optimizer + schedule position).
         _bud = os.environ.get("RPDE_TIME_BUDGET_MIN")
@@ -983,6 +989,9 @@ def main(argv=None) -> str:
     record["best_val_lbw"] = best_lbw if math.isfinite(best_lbw) else None
     save("last")
     write_record()
+    if device.type == "cuda":
+        log(f"[mem] peak GPU memory: allocated {torch.cuda.max_memory_allocated(device) / 2**30:.2f} GiB, "
+            f"reserved {torch.cuda.max_memory_reserved(device) / 2**30:.2f} GiB")
     log(f"[done] best val lbw={best_lbw:.4f} @ epoch {best_epoch} "
         f"wall={(time.time()-t_start)/60:.1f} min -> {run_dir}")
     if wb is not None:

@@ -14,7 +14,7 @@ import torch
 import torch.nn as nn
 
 from .decode import band_from_quantiles
-from .gated_decode import S12_PARAMS, gated_decode
+from .gated_decode import GATE_COEFFS, GATE_TABLES, gated_decode
 from .scaffold import RPDEModel
 
 
@@ -48,9 +48,11 @@ class EnsPredict(nn.Module):
         # list, so K members give 2K views for the average / Vincentised band / energy-preserving combine.  Only for
         # members TRAINED with data.mirror_aug (a plain model loses 2.7 lbw on the mirrored view).  Pure tensor ops.
         self.mirror_views = bool(mirror_views)
-        # gated-decode constants: S12 unless overridden (on the 2-member + B
-        # ensemble the fired branch wants c1 -0.2 / lam 0.10 and c1_out 0.0 -- the S12 values were fitted on singles)
-        self.gated_params = dict(S12_PARAMS, **(gated_params or {}))
+        # gated-decode parameters: the fitted tables and the coefficients, as written by tools/fit_gate.py --out
+        self.gated_params = dict(gated_params or {})
+        missing = [k for k in GATE_TABLES + GATE_COEFFS if k not in self.gated_params]
+        if gated and missing:
+            raise ValueError(f"gated decode needs {missing} in gated_params (tools/fit_gate.py --out)")
         self.ms = nn.ModuleList(members)
         self.checks = bool(checks)
         # per-cell energy-preserving combine of the members' fluctuations (energy_preserving_fluct); off = ENS2/ENS2b
