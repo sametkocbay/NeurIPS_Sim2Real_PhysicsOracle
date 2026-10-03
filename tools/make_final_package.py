@@ -21,6 +21,8 @@ FILES = {
     "Dockerfile": "final/Dockerfile",
     "README.md": "final/README.md",
     "METHOD.md": "final/METHOD.md",
+    "figures/architecture.svg": "final/figures/architecture.svg",
+    "figures/progress.svg": "final/figures/progress.svg",
     "solution.py": "solution.py",
     "configs/final.yaml": "configs/final.yaml",
     "submission/submission.py": "submission/submission.py",
@@ -32,9 +34,6 @@ FILES = {
     # logs of the training runs behind Codabench submission 948641 (exported from Weights & Biases)
     **{f"training_logs_948641/{r}/{f}": f"logs/wandb/{r}/{f}" for r in ("fm_all_s3", "fm_all_s4")
        for f in ("output_log.txt", "history.txt", "config.yaml")},
-    # reproduction run of this package on one RTX 4090 (seed 3 complete, seed 4 stopped after 44 epochs)
-    **{f"training_logs_reproduction/{f}": f"logs/reproduction_4090/{f}"
-       for f in ("fm_all_s3/log.txt", "fm_all_s3/config.json", "fm_all_s4_partial/log.txt")},
 }
 
 

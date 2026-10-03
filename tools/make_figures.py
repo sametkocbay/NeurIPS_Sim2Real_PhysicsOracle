@@ -2,6 +2,7 @@
 """Figures of the README.
 
     python tools/make_figures.py progress                  # docs/figures/progress{,_dark}.svg  (from submissions.csv)
+    python tools/make_figures.py progress --output-dir final/figures --font-scale 1.15 --theme light
     python tools/make_figures.py qualitative [--regime 26700_10]   # docs/figures/qualitative{,_dark}.png
                                                            # (GPU + data/cache32 + weights/; runs the eager ensemble)
 Needs matplotlib (not a training dependency).
@@ -20,6 +21,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.dates as mdates  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402
+from matplotlib.text import Annotation, Text  # noqa: E402
 import numpy as np  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -36,7 +38,7 @@ THEMES = {  # warm neutrals with a clay accent
 LABELS = {
     "S1": ("physics baseline", (6, 22), "left"),
     "S2": ("· untrained core", (12, 3), "left"),
-    "S3": ("axial transformer", (-10, 26), "right"),
+    "S3": ("axial transformer", (-10, 42), "right"),
     "S4": ("2x2 patches", (8, -24), "left"),
     "S6lr": ("learning rate", (-6, 28), "right"),
     "S7final": ("pinball loss +\nband reward", (-10, 30), "right"),
@@ -64,7 +66,7 @@ def _inv(v):
     return np.where(v < 1.0, LO + v * (BREAK - LO), BREAK + (v - 1.0) / UP * (HI - BREAK))
 
 
-def progress():
+def progress(output_dir=None, font_scale=1.0, theme="both", preview=None):
     rows = list(csv.DictReader(open(FIG / "submissions.csv")))
     names = [r["name"] for r in rows]
     s = np.array([float(r["final_score"]) for r in rows])
@@ -72,10 +74,12 @@ def progress():
     best = np.maximum.accumulate(s)
     improved = np.r_[True, s[1:] > best[:-1]]
     x = np.arange(len(rows))
-    for theme, c in THEMES.items():
-        plt.rcParams.update({"font.family": "DejaVu Sans", "font.size": 9.5, "text.color": c["fg"],
+    for theme_name, c in THEMES.items():
+        if theme != "both" and theme_name != theme:
+            continue
+        plt.rcParams.update({"font.family": "DejaVu Sans", "font.size": 9.5 * font_scale, "text.color": c["fg"],
                              "axes.labelcolor": c["fg"], "xtick.color": c["muted"], "ytick.color": c["muted"],
-                             "axes.edgecolor": c["grid"], "svg.fonttype": "none"})
+                             "axes.edgecolor": c["grid"], "svg.fonttype": "path", "svg.hashsalt": "physicsoracle-progress"})
         fig, ax = plt.subplots(figsize=(12, 5.6))
         fig.patch.set_facecolor(c["bg"])
         ax.set_facecolor(c["bg"])
@@ -84,7 +88,7 @@ def progress():
         for yt in (77, 78, 79, 80, 81.2, 81.4, 81.6, 81.8, 82.0):
             ax.axhline(yt, color=c["grid"], lw=0.6, zorder=1)
         ax.axhline(BREAK, color=c["faint"], lw=0.8, ls=(0, (4, 3)), zorder=1)
-        ax.text(len(rows) - 0.45, BREAK, "scale changes", ha="right", va="bottom", fontsize=7.5, color=c["faint"])
+        ax.text(len(rows) - 0.45, BREAK, "scale changes", ha="right", va="bottom", fontsize=7.5 * font_scale, color=c["faint"])
         # best-so-far staircase
         xs = np.r_[x, len(rows) - 0.5]
         ax.step(xs, np.r_[best, best[-1]], where="post", color=c["accent"], lw=1.8, alpha=0.9, zorder=2)
@@ -101,7 +105,7 @@ def progress():
             head = f"{n}  {si:.2f}"
             full = f"{head}  {txt}" if txt.startswith("·") else f"{head}\n{txt}"
             ax.annotate(full, xy=(xi, si), xytext=(dx, dy), textcoords="offset points", ha=ha,
-                        va="bottom" if dy > 0 else "top", fontsize=8.2, color=col, linespacing=1.2, zorder=5,
+                        va="bottom" if dy > 0 else "top", fontsize=8.2 * font_scale, color=col, linespacing=1.2, zorder=5,
                         arrowprops=dict(arrowstyle="-", color=c["faint"], lw=0.7, shrinkA=1, shrinkB=4.5,
                                         connectionstyle="arc3,rad=0"))
         ax.set_xlim(-0.6, len(rows) - 0.4)
@@ -109,7 +113,7 @@ def progress():
         ax.set_yticks([77, 78, 79, 80, 81, 81.2, 81.4, 81.6, 81.8, 82.0])
         ax.set_yticklabels(["77", "78", "79", "80", "81", "81.2", "81.4", "81.6", "81.8", "82.0"])
         ax.set_xticks(x)
-        ax.set_xticklabels([f"{n}\n{d}" for n, d in zip(names, days)], fontsize=7.6)
+        ax.set_xticklabels([f"{n}\n{d}" for n, d in zip(names, days)], fontsize=7.6 * font_scale)
         ax.tick_params(axis="x", length=0, pad=6)
         ax.tick_params(axis="y", length=0)
         ax.set_ylabel("hidden-set final score")
@@ -117,8 +121,29 @@ def progress():
             ax.spines[sp].set_visible(False)
         ax.spines["bottom"].set_color(c["grid"])
         fig.tight_layout()
-        out = FIG / ("progress.svg" if theme == "light" else "progress_dark.svg")
-        fig.savefig(out, facecolor=c["bg"])
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+        annotations = [item for item in ax.texts if isinstance(item, Annotation)]
+        boxes = [Text.get_window_extent(item, renderer) for item in annotations]
+        for i, bounds in enumerate(boxes):
+            if not fig.bbox.contains(bounds.x0, bounds.y0) or not fig.bbox.contains(bounds.x1, bounds.y1):
+                raise RuntimeError(f"Annotation is clipped: {annotations[i].get_text()!r}")
+            for j in range(i):
+                other = boxes[j]
+                if (min(bounds.x1, other.x1) > max(bounds.x0, other.x0) + 1 and
+                        min(bounds.y1, other.y1) > max(bounds.y0, other.y0) + 1):
+                    raise RuntimeError(f"Annotations overlap: {annotations[i].get_text()!r} / {annotations[j].get_text()!r}")
+        destination = Path(output_dir) if output_dir else FIG
+        destination.mkdir(parents=True, exist_ok=True)
+        out = destination / ("progress.svg" if theme_name == "light" else "progress_dark.svg")
+        fig.savefig(out, facecolor=c["bg"], metadata={"Date": None, "Title": "PhysicsOracle development progress"})
+        out.write_text("\n".join(line.rstrip() for line in out.read_text().splitlines()) + "\n")
+        if preview:
+            preview_path = Path(preview)
+            if theme == "both":
+                preview_path = preview_path.with_name(f"{preview_path.stem}_{theme_name}{preview_path.suffix}")
+            preview_path.parent.mkdir(parents=True, exist_ok=True)
+            fig.savefig(preview_path, dpi=160, facecolor=c["bg"])
         plt.close(fig)
         print("wrote", out)
 
@@ -179,5 +204,14 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("what", choices=["progress", "qualitative"])
     ap.add_argument("--regime", default="26700_10")
+    ap.add_argument("--output-dir", type=Path, help="Directory for progress SVGs.")
+    ap.add_argument("--font-scale", type=float, default=1.0, help="Progress figure font-size multiplier.")
+    ap.add_argument("--theme", choices=["light", "dark", "both"], default="both")
+    ap.add_argument("--preview", type=Path, help="PNG preview of the progress figure.")
     a = ap.parse_args()
-    progress() if a.what == "progress" else qualitative(a.regime)
+    if a.what == "progress":
+        if a.font_scale <= 0:
+            ap.error("--font-scale must be positive")
+        progress(a.output_dir, a.font_scale, a.theme, a.preview)
+    else:
+        qualitative(a.regime)

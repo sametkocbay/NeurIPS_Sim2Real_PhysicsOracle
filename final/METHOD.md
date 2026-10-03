@@ -1,165 +1,124 @@
 # PhysicsOracle: Track 1 method
 
 ## 1. Summary
-A parameter-free physics scaffold estimates the freestream velocity, reads the airfoil geometry from the PIV mask and
-builds a convected-turbulence baseline forecast. A 3.4 M-parameter axial transformer predicts the correction to that
-baseline, a zero-mean fluctuation field and residual quantiles. Two seeds are combined by an energy-preserving ensemble
-decode and compiled ahead of time into one graph. What matters most is the physics normalisation and baseline, which
-make one model valid from Re 3,750 to 27,975. Then come joint training on real PIV and on simulation made to look like
-PIV, and the band decode that maximises the expected SPS reward.
+A physics scaffold estimates the freestream velocity, reads the airfoil geometry from the PIV mask and builds baseline forecast. A 3.4 M-parameter axial transformer predicts the correction to that baseline, a zero-mean fluctuation field and residual quantiles. What matters most is the axial transformer architecture allowing to predict high-frequency modes while maintaining low inference and training cost.
+
 
 ## 2. Model
-- **Architecture and number of parameters:** 3,440,787 parameters per member, two members.
-  - **Scaffold** (`rpde/scaffold.py`):
-    - Freestream `U` is the median of the measured `u` in the top 8 rows, and all velocities are divided by `U`.
-    - The core mask (cells with `u` exactly zero over the window) gives the airfoil and its shadow.
-    - Drop-out maps mark the cells with missing PIV vectors.
-    - An 8-dimensional conditioning vector holds `U`, `log dt*`, the advection per frame, the mask centroid (x, y) and
-      extent (x, y), and a real/sim flag.
-    - The advective baseline is the input time mean plus `beta` times the last fluctuation, convected downstream by
-      `gamma * a * k` cells at lead `k`. `beta` and `gamma` are two learned scalars.
-  - **Core** (`rpde/cores/axial.py`):
-    - The 20 past frames are folded into channels, and the input volume `(8, 40, 32, 64)` is cut into 1 x 2 spatial
-      patches: 1024 tokens of width 128.
-    - 6 blocks, each with RMSNorm, 8-head attention along x, attention along y, and an MLP (ratio 8, dropout 0.1).
-    - Every sub-layer is modulated by FiLM from one shared conditioning MLP.
-    - A transposed convolution maps the tokens back to `(128, 20, 32, 64)`.
-  - **Head:** a 1 x 1 convolution per future frame and cell gives:
-    - a correction to the baseline mean (2 channels);
-    - a fluctuation field with zero temporal mean (2 channels);
-    - 5 non-crossing residual quantiles per channel, at levels 0.1, 0.25, 0.5, 0.75 and 0.9.
-- **Inputs and outputs, including preprocessing and normalization:**
-  - The input is the raw window `(N, 20, 32, 64, 3)` in physical units (`p` is ignored).
-  - Normalisation is per window, by its own freestream estimate `U`. No dataset statistics are used and
-    `mean_std_real.pt` is not read.
-  - A member outputs `mean = (baseline + dmean) * U`, `fluct * U` and the quantiles of `target - mean`, with zeros
-    inside the mask.
-  - The final output is `prediction`, `lower` and `upper` in physical units, with `p = 0`.
-- **Starting point:** random initialisation (`torch.manual_seed(seed)`); no official checkpoint is used.
-- **Where the numbers are:**
-  - `configs/final.yaml`: the training recipe of a member (sections `core` to `eval`) and every decision of the final
-    ensemble (section `submission`: seeds, epoch, decode settings, gate coefficients, compiled batch sizes).
-  - `rpde/constants.py`: facts about the data and the task (grid, time step, chord, Reynolds and angle grids,
-    quantile levels, the scorer's constants).
-  - `rpde/data.py`: the parameters of the PIV-likeness augmentation of simulated windows (noise level, drop-out holes).
-  - The gated decode's data tables are fitted in `train()` (section 6).
+<p align="center">
+  <img src="figures/architecture.svg"
+       alt="PhysicsOracle architecture: preprocessing, baseline, transformer, output heads and two-member decode"
+       width="70%">
+</p>
+
+The model takes **20 measured velocity frames on a 32 × 64 grid** and forecasts the next 20 frames, together with lower and upper uncertainty bounds. We combine two independently trained members, each with **3,440,787 parameters**.
+
+**Physics scaffold.** We estimate the incoming flow speed from the nonzero streamwise velocities in the top eight rows and divide the input velocities by this estimate. This reduces differences in velocity scale between flow conditions. Cells with no streamwise measurement throughout the input window form a mask describing the airfoil and unmeasured regions. We also record how frequently measurements are missing at each cell.
+The scaffold builds an initial forecast by blending the latest velocity field with a simple downstream-motion forecast. The latter takes the input’s time-average field and adds the latest frame’s deviation from that average, shifted downstream. Two learned scalars control the blend and the displacement. The transformer then learns corrections to this baseline.
+
+**Axial transformer.** The 20 input frames are folded into channels, and neighbouring cells are grouped into 1 × 2 patches. This produces 1,024 tokens, each represented by 128 features. Six transformer blocks with eight heads each exchange information first along the streamwise direction and then across it, followed by a feed-forward network.
+An additional vector of eight numbers describes the flow speed, relative time between frames, downstream displacement per frame, mask position and size, and whether the input is real or simulated. Through FiLM, these numbers adjust the scaling, offsets and contribution of each transformer sub-layer.
+
+**Output heads.** For every future frame, grid cell and velocity component, the network produces three outputs: a correction to the baseline, a fluctuation contribution, and five estimated percentiles of the deviation from the corrected baseline. The fluctuation contribution is constrained to average to zero over the 20 forecast frames. The percentiles (10%, 25%, 50%, 75% and 90%) remain ordered and describe the predicted uncertainty.
+
+**Ensemble decode.** We average the members’ corrected baselines and corresponding percentiles. We also average their fluctuation contributions, then rescale them to compensate for fluctuation energy lost through averaging, subject to a cap. Further adjustments damp fluctuations with forecast lead time and, above the estimated training range, shift the forecast toward the measured input average.
+
+**Starting point.** We start with random initialization and do not use a provided baseline.
+
 
 ## 3. Data
-- **Training data used and how the two are combined:**
-  - All 81 `train_real` trajectories and all 100 `train_sim` trajectories, at 32 x 64 (every second row and column,
-    the evaluation grid).
-  - Each window (20 input + 20 target frames) is drawn by first picking a regime: real regimes uniformly, with 75 % of
-    the probability, and simulated regimes with 25 %. Then a start frame is picked uniformly, and every frame of every
-    trajectory can be drawn (`train_all`).
-  - Some simulated regimes have no real recording: the two Reynolds rows absent from `train_real` (15,225 and 27,975)
-    and 8 (Re, angle) combinations missing from it. Their simulated trajectories get twice the sampling weight inside
-    the simulated share, so that the gaps of the real data are covered (`HIDDEN_ROWS`, `MISSING_CORNERS` in
-    `rpde/constants.py`, read off the file lists of `train_real` and `train_sim`).
-  - Simulated trajectories are strided to the real convective time step of their Reynolds number.
-  - 6000 windows per epoch.
-- **Validation split carved out of the training data, if any:** none in `train()`.
-  - The validation score logged per epoch (243 windows from the last 120 frames of each trajectory) uses frames that
-    are also trained on. It is only logged and steers nothing.
-  - During development, held-out folds of whole Reynolds rows (`R-top`, `R-mid-a`, `R-corner`; `rpde/data.py`) fixed
-    the epoch and the decode constants (section 4).
-- **Augmentation:**
-  - Simulated windows get the PIV mask of a real recording, PIV-like drop-out holes and measurement noise.
-  - Every window is mirrored with p = 0.5: flip in y and negate v, which is the exact flow at the negative angle of
-    attack.
-  - The draws are a function of `(seed, epoch, index)`.
-- **Data left out, and why:** `train_real/7575_0` (a duplicate of `6300_0`, per the organisers) and the simulated
-  pressure (the target has `p = 0`).
+**Training data and sampling.** We use 81 real PIV trajectories and 100 simulated trajectories, downsampled to the 32 × 64 evaluation grid. Each epoch contains 6,000 randomly sampled windows of 20 input and 20 target frames. Samples come from real data with 75% probability and simulation with 25% probability. Simulated regimes without corresponding real measurements receive twice the sampling weight of other simulated regimes. Window start positions are sampled uniformly across all valid positions. Simulation frames are subsampled to approximate the real data’s convective time step.
+
+**Validation.** The final training runs reserve no independent validation data. The 243 monitoring windows overlap with data available for training; the shipped checkpoints come from the fixed training duration described in Section 4. Separate development folds hold out whole Reynolds-number rows or selected Reynolds-number and angle combinations.
+
+**Augmentation.** Simulated input and target frames receive real measurement masks, random missing vectors and noise to resemble PIV data. Each real or simulated window has a 50% probability of being reflected vertically, with the cross-stream velocity component negated. Sampling and augmentation are reproducible from the seed, epoch and sample index.
+
+**Excluded data.** We exclude `train_real/7575_0`, identified by the organisers as a duplicate of `6300_0`. Simulated pressure is unused because it did not improve results.
+
 
 ## 4. Training
-One row per stage, in the order `train()` runs them. Both members run the same stage; the second member runs it again
-with another seed.
+Both members follow the same training stage. They run sequentially with different seeds.
 
 | Stage | Data | Loss | Optimizer and learning rate schedule | Steps or epochs | Batch size |
 |---|---|---|---|---|---|
-| 1 (seed 3), then 1 (seed 4) | train_real + train_sim, 75/25 | Relative L2 of the mean, plus relative L2 of the prediction (mean detached), plus 4.0 x pinball loss of the 5 quantiles, plus 0.2 x TKE-map loss, plus (from epoch 40) 1.0 x a differentiable SPS band reward (its tau annealed from 0.02 to 0.001). Measured cells only | AdamW (betas 0.9, 0.95), lr 1e-3, weight decay 0.05 (not on biases, norms, FiLM gates, position embeddings or the baseline scalars), 5 warm-up epochs, then cosine decay over 100 epochs; gradient clipping 1.0; bf16 autocast; EMA of the weights, decay 0.9995 | 59 epochs of 750 steps (44,250 steps). The schedule is laid out for 100 epochs and training stops after epoch 59 | 8 |
+| 1, repeated for two seeds | Real and simulated windows, sampled 75/25 | Relative L2 on the central forecast and prediction; 4 × summed pinball losses; 0.2 × TKE-map loss; differentiable SPS reward from the 41st epoch | AdamW, betas (0.9, 0.95), learning rate 0.001, weight decay 0.05; 5 warm-up epochs followed by cosine decay over a 100-epoch schedule | Stop after 59 epochs: 750 steps per epoch, 44,250 steps per member | 8 |
 
-- **How runs or checkpoints are selected, if at all:** no selection inside `train()`. Each member ships its EMA weights
-  after epoch 59, a fixed number in `configs/final.yaml`.
-  - That epoch was chosen during development on the held-out folds. The 2-member ensemble was scored on the held-out
-    rows at every epoch from 35 to 75.
-  - Epochs 58-63 are within 0.015 score points of each fold's best, and later epochs lose quickly (epoch 100: -0.17).
-  - Epoch 59 has the best worst case.
-- **Seeds, and the run-to-run spread you have seen:** seeds 3 and 4.
-  - At epoch 59 their logged validation scores are 85.88 and 85.91 (rel_l2 0.0757 and 0.0755, sps 55.44 and 55.52).
-  - The two-member ensemble scored +0.09 above a single member on the hidden development set.
+**Training details.** We use bf16 mixed precision, gradient clipping at 1.0 and an exponential moving average (EMA) of the weights with decay 0.9995. Biases, normalization parameters and baseline scalars are exempt from weight decay. The central forecast is detached when computing the prediction, TKE and SPS losses. L2, pinball and SPS losses exclude missing target values; TKE uses full-field temporal variance. SPS coverage smoothing decreases from 0.02 to approximately 0.00802 by the stopping epoch.
+
+**Checkpoint selection.** Each member ships its EMA weights after epoch 59, fixed in the configuration. The trainer also saves a checkpoint selected by the monitoring score, but that checkpoint is not used for submission.
+
+**Seeds and observed variation.** We use seeds 3 and 4. At epoch 59, their monitoring scores are 85.88 and 85.91, with relative L2 errors of 0.0757 and 0.0755. These monitoring windows overlap with training data. On the hidden development set, the recorded single-member and two-member ensemble submissions scored 81.84 and 81.93.
 
 ## 5. Uncertainty bounds
-- **Averaging:** the members' quantiles of `target - mean` are averaged level by level.
-- **Band:** the band is centred on the ensemble mean. Its half-width per cell is chosen from 32 candidates to maximise
-  the expected SPS reward `exp(-width / sigma) * P(target inside)`, under the piecewise-linear distribution given by
-  the 5 quantiles.
-- **Scaling:** the half-width is then multiplied by 0.95, a constant chosen on the held-out folds.
-- **Safety:** `lower <= prediction <= upper` holds by construction.
+**Quantiles.** Each member predicts five percentiles (10%, 25%, 50%, 75% and 90%) of the deviation from its central velocity forecast, trained with a pinball loss. We average corresponding percentiles across the two members.
 
-## 6. Inference
-- **Track 1: what `predict` does per call, numeric precision, any compilation or caching:**
-  - **What runs:** `predict` copies the input through a pinned host buffer to the GPU and runs one compiled graph for
-    that batch size. The graph contains both members, the energy-preserving combine, the gated decode and the band
-    decode.
-  - **Outputs:** the three outputs are copied back into pinned host buffers and returned as float32 arrays.
-  - **Precision:** the transformer core runs with fp16 weights, the scaffold and the decode in fp32; attention uses
-    the math kernel. The compiled graph agrees with the eager fp16 path to within 1e-4 m/s on the prediction.
-  - **Compilation:** AOTInductor with max-autotune, for batch sizes 1, 2, 3, 4, 5 and 10, built at the end of
-    `train()` on the training GPU. Other batch sizes are split into compiled sizes.
-  - **Load time:** `load_predictor` loads the graphs through their C API (no compiler at run time), runs a warm-up of
-    every batch size and allocates the output buffers. Nothing is cached between calls except buffers.
-  - **Ensemble decode, per cell:**
-    1. Average the members' means and quantiles.
-    2. Rescale the averaged fluctuation to the members' mean temporal energy (gain clipped to [1, 16]). This undoes the
-       energy that averaging two out-of-phase fluctuations removes.
-    3. `prediction = mean + 0.70 * fluctuation`.
-    4. Gated decode: for inputs whose estimated Reynolds number lies above the largest training Re for their estimated
-       angle, damp the fluctuation with lead time and shrink the mean slightly. The angle is estimated as the nearest
-       per-angle centroid of the mask-geometry features. `train()` fits the tables (largest Re per angle, centroids
-       and feature spread) on `train_real` (`tools/fit_gate.py`). The decay and shrink coefficients are hyperparameters
-       chosen on the held-out folds (`rpde/gated_decode.py`).
+**Probability curve.** We connect the predicted percentiles with straight lines to estimate cumulative probability. Beyond the outer percentiles, we extend the end segments and clip probabilities to `[0, 1]`.
+
+**Width selection.** We test 32 preset full widths and select the one maximizing `probability inside × exp(−width / sigma)`. The fixed scale `sigma = 0.0563870259 m/s` controls the penalty for wider intervals.
+
+**Bounds.** The interval is centred on the averaged central forecast plus the predicted median deviation. We reduce the selected width by 5%. In physical units:
+  ```
+  center = central velocity field + predicted median deviation
+  lower = centre − 0.95 × selected width / 2
+  upper = centre + 0.95 × selected width / 2
+  ```
+
+
+## 6. Inference (Track 1)
+**Per call.** `predict` transfers the input through pinned host memory to the GPU and runs both members and decoding in a compiled graph. Other batch sizes are split into supported sizes. Predictions and bounds return as float32 arrays, with pressure zero.
+
+**Precision.** The transformer core uses fp16; preprocessing, output heads and decoding use fp32. Attention uses PyTorch’s math implementation.
+
+**Compilation and loading.** AOTInductor compiles batch sizes 1, 2, 3, 4, 5 and 10 on the training GPU, with max-autotune. Initialization loads the graphs through their C API, warms them up and prepares buffers. No runtime compiler is needed. Compiled execution failures trigger an eager PyTorch fallback.
+
+**Caching.** Loaded graphs, weights and reusable buffers remain in memory. Prediction results are not cached for reuse.
+
+**Ensemble adjustments.** Central forecasts and quantiles are averaged; averaged fluctuations are rescaled to retain energy, then damped with lead time. Above the estimated real training range, the forecast’s average is pulled toward the input average. Reference tables are fitted from `train_real`.
+
 
 ## 7. Speed
 What we did for the Time score (91.862 on Codabench):
 - Ahead-of-time compilation of the whole predict path into one graph per batch size, with no Python in the timed path.
-- An fp16 core and a model of only 3.4 M parameters (moving from 10.4 M to 3.4 M parameters also raised the score).
+- An fp16 core and a model of only 3.4 M parameters (moving from 10.4 M to 3.4 M parameters also improved generalization).
 - All 20 input frames folded into one temporal token, so the core has 1024 tokens.
 - Warm-up and buffer allocation at load time, and pinned host buffers.
 
 We measured 1.1 ms per window at batch 5 on an A100, and 1.6 ms on an RTX 4090.
 
 ## 8. What mattered
-Changes in the hidden development score between our submissions:
+
+<p align="center">
+  <img src="figures/progress.svg" alt="Hidden development scores across 17 submissions" width="100%">
+</p>
+
+
+Selection of our most relevant changes improving the submission score:
 
 | Change | Effect |
 |---|---|
-| Physics baseline alone, then the axial transformer on top of it, with all training data | +2.28 |
-| Training recipe: patching and time folding, learning rate, pinball loss and the differentiable band reward | +1.38 |
+| Physics baseline alone (fixed `beta=0.6` and `gamma=0.75`) | 77.63 |
+| Axial transformer correcting the physics baseline | +2.28 |
+| Improved training recipe: patching and time folding, learning rate, pinball loss and the differentiable band reward | +1.38 |
 | Inference: ahead-of-time compilation, gated decode above the training Re range, wider MLP | +0.43 |
 | Architecture: all 20 frames in one temporal token, 1 x 2 patches, 3.4 M instead of 10.4 M parameters | +0.12 |
 | Two-seed ensemble in one compiled graph | +0.09 |
-| Mirror augmentation, training on all frames, energy-preserving combine, fluctuation scale 0.70, band scale 0.95, fixed epoch 59 | +0.08 |
-| **Total**, from 77.63 (physics baseline) to 82.01 | **+4.38** |
+| Mirror augmentation, training on all frames, energy-preserving combine, fluctuation scale 0.70, band scale 0.95 | +0.08 |
+| **Total**, from 77.63 (physics baseline) to 82.01 (submitted model) | **+4.38** |
 
-On the held-out folds, mirror augmentation alone adds +0.44 per model at an angle of attack beyond the training range.
 
 ## 9. Compute
-- **Hardware of the run behind the submission:** one NVIDIA RTX 4090 per member, on rented 4 x RTX 4090 servers (64
-  cores, 504 GiB).
-- **Training time:** 82 min per member to epoch 59, including a validation pass per epoch. The original runs continued
-  to epoch 100.
-- **Peak GPU memory:** 3.17 GiB allocated by PyTorch per member (3.31 GiB reserved), measured in a reproduction run
-  of this package on an RTX 4090.
-- **Full `train()` on one RTX 4090:** about 3.4 h: 2 x 93 min of training (with a validation pass after every epoch)
-  and about 15 min of compilation. On an RTX 4090 the reproduction run gave the submitted seed-3 weights bit for bit.
+- **Hardware of the run behind the submission:** NVIDIA RTX 4090, 504 GB RAM, 64 CPU cores
+- **Training time:** 82 min per member to epoch 59. (The original runs continued
+  to epoch 100 and took 299 min in total)
+- **Peak GPU memory:** 3.17 GiB allocated by PyTorch per member (3.31 GiB reserved) 
 
 ## 10. References
-- **Ideas the method builds on:**
+- **Literature (selection):**
   - Axial attention: Ho et al., *Axial Attention in Multidimensional Transformers*, 2019.
   - FiLM: Perez et al., *FiLM: Visual Reasoning with a General Conditioning Layer*, AAAI 2018.
   - Frozen turbulence: Taylor, *The spectrum of turbulence*, Proc. R. Soc. A, 1938.
   - Pinball (quantile) loss: Koenker and Bassett, *Regression Quantiles*, Econometrica 1978.
 - **Software:**
-  - PyTorch 2.2.2, including AOTInductor and Triton.
-  - NumPy, h5py, PyYAML.
-  - The organisers' `scoring.py` (Track 1 starting kit v9), for the validation score.
+  - Framework and compilation: Python 3.10, PyTorch 2.2.2 with AOTInductor, and Triton 2.2.0. CUDA 12.1, cuDNN 8, and CUDA/C++ compiler tools are provided by the training image.
+  - Data and configuration: NumPy 1.26.4, h5py 3.11.0, and PyYAML 6.0.1, as specified in the Dockerfile. h5py and PyYAML serve preprocessing and training; inference uses PyTorch, NumPy, and the Python standard library.
+  - Scoring: the organizers’ scoring.py, Track 1 starting kit v9, supplies the evaluation subscores.
