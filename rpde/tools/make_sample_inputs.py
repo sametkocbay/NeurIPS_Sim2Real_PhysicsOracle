@@ -1,11 +1,11 @@
 #!/usr/bin/env python
-"""Real PIV windows used to trace, autotune and check the AOT build (tools/aot_build_ens.py).
+"""Real PIV windows used to trace, autotune and check the AOT build (rpde/tools/aot_build_ens.py).
 
 The first five real regimes (sorted by Re, AoA), the first three stride-40 windows of each: 15 windows of shape
 (20, 32, 64, 3) float32 with p = 0, exactly what the evaluator feeds predict(). Real-scale inputs matter: random
 N(0,1) inputs overflow the fp16 fast path and make the build's eager-vs-AOT check fail spuriously.
 
-    python tools/make_sample_inputs.py [--cache data/cache32] [--out build/sample_inputs.npy]
+    python rpde/tools/make_sample_inputs.py [--cache data/cache32] [--out build/sample_inputs.npy]
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ BAD_REAL = {"7575_0"}          # organiser announcement: duplicate of 6300_0
 
 
 def main():
-    root = Path(__file__).resolve().parent.parent
+    root = Path(__file__).resolve().parents[2]
     ap = argparse.ArgumentParser()
     ap.add_argument("--cache", default=str(root / "data" / "cache32"))
     ap.add_argument("--out", default=str(root / "build" / "sample_inputs.npy"))

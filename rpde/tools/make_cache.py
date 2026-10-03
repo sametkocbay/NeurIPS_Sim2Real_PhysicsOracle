@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Build the 32x64 training cache from the raw competition data.
 
-Input  (the public training data, see docs/TRAINING.md):
+Input  (the public training data, see README.md):
     <raw>/train_real/<Re>_<AoA>.h5   PIV, keys u, v, t, x, y, re, aoa           (64x128 per frame)
     <raw>/train_sim/<Re>_<AoA>.h5    CFD, keys u, v, p, t, x, y, re, aoa
 Output (what rpde.data reads):
@@ -11,7 +11,7 @@ Output (what rpde.data reads):
       mask   (32, 64) bool, True = measured (u not identically zero over the trajectory)
       re_nom, aoa (from the file name), re_attr (the file's `re` attribute)
 
-    python tools/make_cache.py --raw <raw> [--cache data/cache32] [--workers 16]
+    python rpde/tools/make_cache.py --raw <raw> [--cache data/cache32] [--workers 16]
 
 The subsampling [::2, ::2] is exactly the evaluation grid (the hidden inputs are 20 x 32 x 64).
 """
@@ -57,7 +57,7 @@ def process(job):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--raw", required=True, help="directory holding train_real/ and train_sim/")
-    ap.add_argument("--cache", default=str(Path(__file__).resolve().parent.parent / "data" / "cache32"))
+    ap.add_argument("--cache", default=str(Path(__file__).resolve().parents[2] / "data" / "cache32"))
     ap.add_argument("--workers", type=int, default=16)
     a = ap.parse_args()
     jobs = []

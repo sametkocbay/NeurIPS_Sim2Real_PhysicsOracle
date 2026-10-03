@@ -1,31 +1,28 @@
 #!/usr/bin/env python
-"""Figures of the README.
+"""Generate the improvement figure from the recorded development submissions.
 
-    python tools/make_figures.py progress                  # docs/figures/progress{,_dark}.svg  (from submissions.csv)
-    python tools/make_figures.py progress --output-dir final/figures --font-scale 1.15 --theme light
-    python tools/make_figures.py qualitative [--regime 26700_10]   # docs/figures/qualitative{,_dark}.png
-                                                           # (GPU + data/cache32 + weights/; runs the eager ensemble)
-Needs matplotlib (not a training dependency).
+    python tools/make_improvement_figure.py --output-dir final/figures --font-scale 1.15 --theme light
+    python tools/make_improvement_figure.py --output-dir /tmp/improvement-review --preview /tmp/improvement.png
+
+Needs matplotlib (not a training dependency); no model, GPU or flow-field data required.
 """
 from __future__ import annotations
 
 import argparse
 import csv
 import datetime as dt
-import os
-import sys
 from pathlib import Path
 
 import matplotlib
 
 matplotlib.use("Agg")
-import matplotlib.dates as mdates  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.text import Annotation, Text  # noqa: E402
 import numpy as np  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-FIG = ROOT / "docs" / "figures"
+DATA = ROOT / "tools" / "figure_data"
+FIGURES = ROOT / "final" / "figures"
 
 THEMES = {  # warm neutrals with a clay accent
     "light": dict(fg="#28261f", muted="#6f6b5e", faint="#a8a494", grid="#e4e1d6", accent="#c96442",
@@ -66,8 +63,8 @@ def _inv(v):
     return np.where(v < 1.0, LO + v * (BREAK - LO), BREAK + (v - 1.0) / UP * (HI - BREAK))
 
 
-def progress(output_dir=None, font_scale=1.0, theme="both", preview=None):
-    rows = list(csv.DictReader(open(FIG / "submissions.csv")))
+def improvement(output_dir=None, font_scale=1.0, theme="both", preview=None):
+    rows = list(csv.DictReader(open(DATA / "submissions.csv")))
     names = [r["name"] for r in rows]
     s = np.array([float(r["final_score"]) for r in rows])
     days = [dt.datetime.strptime(r["datetime"], "%Y-%m-%d %H:%M").strftime("%d %b") for r in rows]
@@ -133,7 +130,7 @@ def progress(output_dir=None, font_scale=1.0, theme="both", preview=None):
                 if (min(bounds.x1, other.x1) > max(bounds.x0, other.x0) + 1 and
                         min(bounds.y1, other.y1) > max(bounds.y0, other.y0) + 1):
                     raise RuntimeError(f"Annotations overlap: {annotations[i].get_text()!r} / {annotations[j].get_text()!r}")
-        destination = Path(output_dir) if output_dir else FIG
+        destination = Path(output_dir) if output_dir else FIGURES
         destination.mkdir(parents=True, exist_ok=True)
         out = destination / ("progress.svg" if theme_name == "light" else "progress_dark.svg")
         fig.savefig(out, facecolor=c["bg"], metadata={"Date": None, "Title": "PhysicsOracle development progress"})
@@ -148,70 +145,13 @@ def progress(output_dir=None, font_scale=1.0, theme="both", preview=None):
         print("wrote", out)
 
 
-def qualitative(regime: str, lead_idx=(0, 9, 19)):
-    import torch
-    sys.path.insert(0, str(ROOT))
-    from rpde.ensemble_predict import EnsPredict, load_member
-    z = np.load(ROOT / "data" / "cache32" / "real" / f"{regime}.npz") if not os.environ.get("RPDE_CACHE") else \
-        np.load(Path(os.environ["RPDE_CACHE"]) / "real" / f"{regime}.npz")
-    f = z["f"][..., :2]
-    s0 = f.shape[0] - 40                                # the last window of the trajectory
-    x = np.zeros((1, 20, 32, 64, 3), np.float32)
-    x[0, ..., :2] = f[s0:s0 + 20]
-    y = f[s0 + 20:s0 + 40]
-    mask = ~z["mask"]
-    members = [load_member(str(ROOT / "weights" / w), 0.70, "cuda") for w in ("fm_all_s3_ep59.pth", "fm_all_s4_ep59.pth")]
-    ens = EnsPredict(members, band_scale=0.95, energy_preserve=True).eval()
-    with torch.no_grad():
-        p, lo, up = (a[0].cpu().numpy() for a in ens(torch.from_numpy(x).cuda()))
-    speed = lambda a: np.hypot(a[..., 0], a[..., 1])  # noqa: E731
-    for theme, c in THEMES.items():
-        plt.rcParams.update({"font.family": "DejaVu Sans", "font.size": 10, "text.color": c["fg"],
-                             "axes.labelcolor": c["fg"], "xtick.color": c["muted"], "ytick.color": c["muted"]})
-        fig, axs = plt.subplots(4, len(lead_idx), figsize=(10.5, 6.6), constrained_layout=True)
-        fig.patch.set_alpha(0.0)
-        vmax = float(np.percentile(speed(y), 99.5))
-        emax = float(np.percentile(np.abs(speed(p[..., :2]) - speed(y)), 99.5))
-        wmax = float(np.percentile(np.abs(up - lo)[..., 0][:, ~mask], 99.5))
-        rows = [("measured |u|", lambda k: speed(y[k]), "viridis", 0, vmax),
-                ("predicted |u|", lambda k: speed(p[k, ..., :2]), "viridis", 0, vmax),
-                ("abs. error", lambda k: np.abs(speed(p[k, ..., :2]) - speed(y[k])), "magma", 0, emax),
-                ("band width (u)", lambda k: (up - lo)[k, ..., 0], "cividis", 0, wmax)]
-        for i, (lab, fn, cmap, lo_v, hi_v) in enumerate(rows):
-            for j, k in enumerate(lead_idx):
-                a = np.ma.array(fn(k), mask=mask)
-                im = axs[i, j].imshow(a, cmap=cmap, vmin=lo_v, vmax=hi_v, origin="upper", interpolation="nearest")
-                axs[i, j].set_xticks([]); axs[i, j].set_yticks([])
-                for sp in axs[i, j].spines.values():
-                    sp.set_color(c["grid"])
-                if i == 0:
-                    axs[i, j].set_title(f"lead {k + 1} / 20", fontsize=10, color=c["fg"])
-                if j == 0:
-                    axs[i, j].set_ylabel(lab, fontsize=10)
-            cb = fig.colorbar(im, ax=axs[i, :], shrink=0.9, pad=0.01, aspect=12)
-            cb.ax.tick_params(labelsize=8, colors=c["muted"]); cb.outline.set_edgecolor(c["grid"])
-            cb.set_label("m/s", fontsize=8, color=c["muted"])
-        re_, aoa = regime.split("_")
-        fig.suptitle(f"Re {int(re_):,}, angle of attack {aoa} deg: last window of the trajectory (training data)",
-                     fontsize=10.5, color=c["fg"])
-        out = FIG / ("qualitative.png" if theme == "light" else "qualitative_dark.png")
-        fig.savefig(out, dpi=150, transparent=True)
-        plt.close(fig)
-        print("wrote", out)
-
-
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser()
-    ap.add_argument("what", choices=["progress", "qualitative"])
-    ap.add_argument("--regime", default="26700_10")
-    ap.add_argument("--output-dir", type=Path, help="Directory for progress SVGs.")
-    ap.add_argument("--font-scale", type=float, default=1.0, help="Progress figure font-size multiplier.")
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--output-dir", type=Path, help="Directory for improvement SVGs (default: final/figures).")
+    ap.add_argument("--font-scale", type=float, default=1.0, help="Figure font-size multiplier.")
     ap.add_argument("--theme", choices=["light", "dark", "both"], default="both")
-    ap.add_argument("--preview", type=Path, help="PNG preview of the progress figure.")
+    ap.add_argument("--preview", type=Path, help="PNG preview of the improvement figure.")
     a = ap.parse_args()
-    if a.what == "progress":
-        if a.font_scale <= 0:
-            ap.error("--font-scale must be positive")
-        progress(a.output_dir, a.font_scale, a.theme, a.preview)
-    else:
-        qualitative(a.regime)
+    if a.font_scale <= 0:
+        ap.error("--font-scale must be positive")
+    improvement(a.output_dir, a.font_scale, a.theme, a.preview)

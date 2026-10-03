@@ -16,7 +16,7 @@ The model takes **20 measured velocity frames on a 32 × 64 grid** and forecasts
 **Physics scaffold.** We estimate the incoming flow speed from the nonzero streamwise velocities in the top eight rows and divide the input velocities by this estimate. This reduces differences in velocity scale between flow conditions. Cells with no streamwise measurement throughout the input window form a mask describing the airfoil and unmeasured regions. We also record how frequently measurements are missing at each cell.
 The scaffold builds an initial forecast by blending the latest velocity field with a simple downstream-motion forecast. The latter takes the input’s time-average field and adds the latest frame’s deviation from that average, shifted downstream. Two learned scalars control the blend and the displacement. The transformer then learns corrections to this baseline.
 
-**Axial transformer.** The 20 input frames are folded into channels, and neighbouring cells are grouped into 1 × 2 patches. This produces 1,024 tokens, each represented by 128 features. Six transformer blocks with eight heads each exchange information first along the streamwise direction and then across it, followed by a feed-forward network.
+**Axial transformer.** The 20 input frames are folded into channels, and neighboring cells are grouped into 1 × 2 patches. This produces 1,024 tokens, each represented by 128 features. Six transformer blocks with eight heads each exchange information first along the streamwise direction and then across it, followed by a feed-forward network.
 An additional vector of eight numbers describes the flow speed, relative time between frames, downstream displacement per frame, mask position and size, and whether the input is real or simulated. Through FiLM, these numbers adjust the scaling, offsets and contribution of each transformer sub-layer.
 
 **Output heads.** For every future frame, grid cell and velocity component, the network produces three outputs: a correction to the baseline, a fluctuation contribution, and five estimated percentiles of the deviation from the corrected baseline. The fluctuation contribution is constrained to average to zero over the 20 forecast frames. The percentiles (10%, 25%, 50%, 75% and 90%) remain ordered and describe the predicted uncertainty.
@@ -33,7 +33,7 @@ An additional vector of eight numbers describes the flow speed, relative time be
 
 **Augmentation.** Simulated input and target frames receive real measurement masks, random missing vectors and noise to resemble PIV data. Each real or simulated window has a 50% probability of being reflected vertically, with the cross-stream velocity component negated. Sampling and augmentation are reproducible from the seed, epoch and sample index.
 
-**Excluded data.** We exclude `train_real/7575_0`, identified by the organisers as a duplicate of `6300_0`. Simulated pressure is unused because it did not improve results.
+**Excluded data.** We exclude `train_real/7575_0`, identified by the organizers as a duplicate of `6300_0`. Simulated pressure is unused because it did not improve results.
 
 
 ## 4. Training
@@ -56,11 +56,11 @@ Both members follow the same training stage. They run sequentially with differen
 
 **Width selection.** We test 32 preset full widths and select the one maximizing `probability inside × exp(−width / sigma)`. The fixed scale `sigma = 0.0563870259 m/s` controls the penalty for wider intervals.
 
-**Bounds.** The interval is centred on the averaged central forecast plus the predicted median deviation. We reduce the selected width by 5%. In physical units:
+**Bounds.** The interval is centered on the averaged central forecast plus the predicted median deviation. We reduce the selected width by 5%. In physical units:
   ```
   center = central velocity field + predicted median deviation
-  lower = centre − 0.95 × selected width / 2
-  upper = centre + 0.95 × selected width / 2
+  lower = center − 0.95 × selected width / 2
+  upper = center + 0.95 × selected width / 2
   ```
 
 
@@ -96,7 +96,7 @@ Selection of our most relevant changes improving the submission score:
 
 | Change | Effect |
 |---|---|
-| Physics baseline alone (fixed `beta=0.6` and `gamma=0.75`) | 77.63 |
+| Physics baseline alone (fixed `beta=0.75` and `gamma=0.6`) | 77.63 |
 | Axial transformer correcting the physics baseline | +2.28 |
 | Improved training recipe: patching and time folding, learning rate, pinball loss and the differentiable band reward | +1.38 |
 | Inference: ahead-of-time compilation, gated decode above the training Re range, wider MLP | +0.43 |

@@ -1,11 +1,11 @@
 """PhysicsOracle, NeurIPS 2026 RealPDE Track 1: training package of the final phase.
 
 train(data_dir, output_dir, device) reproduces our Codabench submission from the public training data:
-  1. cache    the 32 x 64 training cache from data_dir/train_{real,sim}        (tools/make_cache.py)
-              and the data tables of the gated decode, fitted on train_real   (tools/fit_gate.py)
+  1. cache    the 32 x 64 training cache from data_dir/train_{real,sim}        (rpde/tools/make_cache.py)
+              and the data tables of the gated decode, fitted on train_real   (rpde/tools/fit_gate.py)
   2. members  configs/final.yaml with seeds 3 and 4, EMA weights after epoch 59 (python -m rpde.train)
-  3. compile  the two-member ensemble, ahead of time, batch sizes 1-5 and 10    (tools/aot_build_ens.py)
-  4. package  the Codabench package layout in output_dir, clean-room tested     (tools/pack_submission.py)
+  3. compile  the two-member ensemble, ahead of time, batch sizes 1-5 and 10    (rpde/tools/aot_build_ens.py)
+  4. package  the Codabench package layout in output_dir, clean-room tested     (rpde/tools/pack_submission.py)
 load_predictor(output_dir, device) imports output_dir/submission.py, the runtime that ran on Codabench, unchanged.
 
 Nothing is selected: the seeds (3, 4), the epoch (59), the decode settings and the compiled batch sizes are fixed in
@@ -102,10 +102,10 @@ def train(data_dir, output_dir, device):
 
     # 1. cache: every second row and column of the raw fields (the evaluation grid), one npz per trajectory
     workers = str(min(16, os.cpu_count() or 1))
-    times["cache_s"] = _run([py, "tools/make_cache.py", "--raw", data_dir, "--cache", cache, "--workers", workers],
+    times["cache_s"] = _run([py, "rpde/tools/make_cache.py", "--raw", data_dir, "--cache", cache, "--workers", workers],
                             log, env, stage_log)
     gate_json = os.path.join(logs, "gate.json")
-    times["fit_gate_s"] = _run([py, "tools/fit_gate.py", "--out", gate_json, "--check"], log, env, stage_log)
+    times["fit_gate_s"] = _run([py, "rpde/tools/fit_gate.py", "--out", gate_json, "--check"], log, env, stage_log)
     gate = json.load(open(gate_json))
 
     # 2. members, one after the other
@@ -131,14 +131,14 @@ def train(data_dir, output_dir, device):
 
     # 3. compile the ensemble for the batch sizes of the evaluation (traced on real training windows)
     samples = os.path.join(work, "sample_inputs.npy")
-    _run([py, "tools/make_sample_inputs.py", "--cache", cache, "--out", samples], log, env, stage_log)
+    _run([py, "rpde/tools/make_sample_inputs.py", "--cache", cache, "--out", samples], log, env, stage_log)
     groups = ("5,1",) if SMOKE else tuple(SUB["compile_batches"])
     dec = SUB["decode"]
     decode = [f"gamma={dec['gamma']}", f"band_scale={dec['band_scale']}",
               f"energy_preserve={int(bool(dec['energy_preserve']))}"]
     t0 = time.time()
     for g in groups:
-        cmd = [py, "tools/aot_build_ens.py", aot, ",".join(members), *decode, f"gated={gate_json}",
+        cmd = [py, "rpde/tools/aot_build_ens.py", aot, ",".join(members), *decode, f"gated={gate_json}",
                f"batches={g}", f"inputs={samples}"]
         if SMOKE:
             cmd.append("autotune=0")
@@ -158,7 +158,7 @@ def train(data_dir, output_dir, device):
 
     # 4. package: the Codabench layout, written straight into output_dir; then predict() in a clean interpreter
     sys.path.insert(0, HERE)
-    from tools.pack_submission import assemble, clean_room
+    from rpde.tools.pack_submission import assemble, clean_room
     assemble(aot, members, out, ens_cfg=dict(gamma=float(dec["gamma"]), band_scale=float(dec["band_scale"]),
                                              energy_preserve=bool(dec["energy_preserve"]), gated=gate,
                                              mirror_views=False))

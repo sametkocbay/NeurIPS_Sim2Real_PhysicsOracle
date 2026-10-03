@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Assemble the Codabench submission zip from the AOT build and the member checkpoints, then test it in a clean room.
 
-    python tools/pack_submission.py --aot build/aot \\
+    python rpde/tools/pack_submission.py --aot build/aot \\
         --members weights/fm_all_s3_ep59.pth weights/fm_all_s4_ep59.pth --out dist/submission.zip
 
 Zip layout (everything at the archive root):
@@ -11,7 +11,7 @@ Zip layout (everything at the archive root):
     model_0.pth, model_1.pth  members in the SAME order as the AOT build (stripped: EMA weights + architecture)
     aot/predict_b{B}.so, aot/kernels/*.cubin
     rpde/...                the modules the eager fallback imports
-The member order must equal the order given to tools/aot_build_ens.py.
+The member order must equal the order given to rpde/tools/aot_build_ens.py.
 """
 from __future__ import annotations
 
@@ -27,9 +27,9 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
-from tools.strip_ckpt import strip  # noqa: E402
+from rpde.tools.strip_ckpt import strip  # noqa: E402
 
 CAP_BYTES = 256 * 1024 * 1024
 RUNTIME_RPDE = ["__init__.py", "constants.py", "scaffold.py", "decode.py", "gated_decode.py", "ensemble_predict.py",
@@ -116,7 +116,7 @@ def clean_room(pkg: Path) -> str:
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--aot", required=True, help="directory written by tools/aot_build_ens.py")
+    ap.add_argument("--aot", required=True, help="directory written by rpde/tools/aot_build_ens.py")
     ap.add_argument("--members", nargs="+", required=True, help="checkpoints, in AOT build order")
     ap.add_argument("--out", default=str(ROOT / "dist" / "submission.zip"))
     a = ap.parse_args()

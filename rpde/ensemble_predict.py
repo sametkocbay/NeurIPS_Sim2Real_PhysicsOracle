@@ -48,11 +48,11 @@ class EnsPredict(nn.Module):
         # list, so K members give 2K views for the average / Vincentised band / energy-preserving combine.  Only for
         # members TRAINED with data.mirror_aug (a plain model loses 2.7 lbw on the mirrored view).  Pure tensor ops.
         self.mirror_views = bool(mirror_views)
-        # gated-decode parameters: the fitted tables and the coefficients, as written by tools/fit_gate.py --out
+        # gated-decode parameters: the fitted tables and the coefficients, as written by rpde/tools/fit_gate.py --out
         self.gated_params = dict(gated_params or {})
         missing = [k for k in GATE_TABLES + GATE_COEFFS if k not in self.gated_params]
         if gated and missing:
-            raise ValueError(f"gated decode needs {missing} in gated_params (tools/fit_gate.py --out)")
+            raise ValueError(f"gated decode needs {missing} in gated_params (rpde/tools/fit_gate.py --out)")
         self.ms = nn.ModuleList(members)
         self.checks = bool(checks)
         # per-cell energy-preserving combine of the members' fluctuations (energy_preserving_fluct); off = ENS2/ENS2b

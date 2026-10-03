@@ -1,9 +1,9 @@
 # Final PhysicsOracle model (NeurIPS 2026 RealPDE Track 1). Train two members, seeds 3 and 4:
 #   python -m rpde.train --config configs/final.yaml --fold full --seed 3 --name fm_all_s3
 #   python -m rpde.train --config configs/final.yaml --fold full --seed 4 --name fm_all_s4
-# and ship the EMA snapshot of epoch 59 of each (runs/<name>/ep59.pth). See docs/TRAINING.md.
+# and ship the EMA snapshot of epoch 59 of each (runs/<name>/ep59.pth). See final/METHOD.md, section 4.
 # The sections core ... wandb are the training recipe of one member (rpde.train). The section `submission` holds the
-# decisions of the final ensemble (solution.py, tools/fit_gate.py); rpde.train ignores it.
+# decisions of the final ensemble (solution.py, rpde/tools/fit_gate.py); rpde.train ignores it.
 core:
   name: axial
   kwargs:
@@ -92,12 +92,12 @@ wandb:
 submission:
   seeds: [3, 4]        # one ensemble member per seed
   epoch: 59            # EMA snapshot shipped from each member; equals eval.stop_after
-  decode:              # chosen on held-out Reynolds rows of train_real (docs/TRAINING.md, section 5)
+  decode:              # chosen on held-out Reynolds rows of train_real (final/METHOD.md, section 4)
     gamma: 0.70        # prediction = mean + gamma * fluctuation
     band_scale: 0.95   # scale of the band half-width that maximises the expected SPS reward
     energy_preserve: true   # rescale the averaged fluctuation to the members' mean temporal energy
   gate:                # gated decode above the training Reynolds range (rpde/gated_decode.py), chosen on held-out folds;
-                       # its data tables (aoa_keys, tops, centroids, sd) are fitted from train_real by tools/fit_gate.py
+                       # its data tables (aoa_keys, tops, centroids, sd) are fitted from train_real by rpde/tools/fit_gate.py
     c1: -0.6           # lead-time decay of the fluctuation inside the gate: factor 1 + c1 * k / 19 at lead k
     decay_lo: 0.0      # the decay acts for decay_lo < excess < decay_hi, excess in Re grid steps above the top
     decay_hi: 1.75     #   training Re of the estimated angle

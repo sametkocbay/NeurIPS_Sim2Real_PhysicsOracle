@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Strip a training checkpoint down to what a submission needs.
 
-    python tools/strip_ckpt.py runs/fm_all_s3/ep59.pth weights/fm_all_s3_ep59.pth
+    python rpde/tools/strip_ckpt.py runs/fm_all_s3/ep59.pth weights/fm_all_s3_ep59.pth
 
 Keeps the EMA weights (the ones every submission loads) plus the architecture
 description read back by `rpde.ensemble_predict.load_member`:

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Fit the data tables of the gated decode (rpde/gated_decode.py) from the training cache.
 
-    python tools/fit_gate.py [--out gate.json] [--check]
+    python rpde/tools/fit_gate.py [--out gate.json] [--check]
 
 --out writes everything the gated decode needs: the fitted tables plus the decode coefficients of
 configs/final.yaml (submission.gate).
@@ -28,13 +28,13 @@ import numpy as np
 import torch
 import yaml
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from rpde import data as D  # noqa: E402
 from rpde.constants import AOA_GRID  # noqa: E402
 from rpde.gated_decode import GATE_COEFFS, GATE_TABLES  # noqa: E402
 from rpde.scaffold import Preproc  # noqa: E402
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # the tables of Codabench submission 948641 (printed to 8 digits), for --check
 REFERENCE = dict(
     aoa_keys=[0, 5, 10, 15, 20],

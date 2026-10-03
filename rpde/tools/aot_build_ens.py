@@ -5,7 +5,7 @@ max-autotune, each member's fp16 fast path applied), then reload it through the 
 against the eager EnsPredict: max |dpred|, |dband|, timing.  Needs a CUDA GPU, the CUDA toolkit (CUDA_HOME) and a host
 C++ compiler; run the batch groups one after another (parallel builds into one directory race on temp files).
 
-    python tools/aot_build_ens.py build/aot weights/fm_all_s3_ep59.pth,weights/fm_all_s4_ep59.pth \
+    python rpde/tools/aot_build_ens.py build/aot weights/fm_all_s3_ep59.pth,weights/fm_all_s4_ep59.pth \
         gamma=0.70 band_scale=0.95 energy_preserve=1 gated=build/gate.json batches=5,10 \
         [inputs=build/sample_inputs.npy] [autotune=1]
 Writes <out_dir>/predict_b{B}.so, <out_dir>/kernels/*.cubin and <out_dir>/build_report_<batches>.json.
@@ -16,14 +16,14 @@ from contextlib import ExitStack
 import numpy as np
 import torch
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 out_dir = os.path.abspath(sys.argv[1])
 ckpts = sys.argv[2].split(",")
 opts = dict(a.split("=", 1) for a in sys.argv[3:])
 gamma = float(opts.get("gamma", "0.70"))
 band_scale = float(opts.get("band_scale", "1.0"))
 energy_preserve = opts.get("energy_preserve", "0") == "1"
-gated = opts.get("gated", "{}")                           # JSON, or a JSON file (tools/fit_gate.py --out): gate parameters
+gated = opts.get("gated", "{}")                           # JSON, or a JSON file (rpde/tools/fit_gate.py --out): gate parameters
 gated = json.load(open(gated)) if os.path.isfile(gated) else json.loads(gated)
 mirror_views = opts.get("mirror_views", "0") == "1"
 batches = [int(b) for b in opts.get("batches", "5").split(",")]
@@ -38,7 +38,7 @@ from rpde.fastinf import RECOMMENDED, FastInference  # noqa: E402
 dev = torch.device("cuda")
 members = [load_member(c, gamma, dev) for c in ckpts]
 fis = [FastInference(m, **{**RECOMMENDED, "cuda_graph": False}) for m in members]
-# real-scale example windows (tools/make_sample_inputs.py), at least max(batches) of them
+# real-scale example windows (rpde/tools/make_sample_inputs.py), at least max(batches) of them
 xall = torch.from_numpy(np.load(opts.get("inputs", "build/sample_inputs.npy"))).to(dev)
 print(f"[ens-aot] K={len(members)} gamma={gamma} band_scale={band_scale} energy_preserve={energy_preserve} gated={gated} mirror_views={mirror_views} batches={batches} autotune={autotune} inputs={tuple(xall.shape)}",
       flush=True)

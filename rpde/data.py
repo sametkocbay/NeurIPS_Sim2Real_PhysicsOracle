@@ -1,7 +1,7 @@
 """Data layer: cache index, regime table, folds, windows, sim alignment.
 
 Local-only module (never shipped): may import yaml/scipy/h5py.  It reads the
-32x64 float32 cache produced by ``tools/make_cache.py``:
+32x64 float32 cache produced by ``rpde/tools/make_cache.py``:
 
     <CACHE_ROOT>/{real,sim}/<Re>_<AoA>.npz
         f       (T, 32, 64, C)  float32   C = 2 real [u, v], 3 sim [u, v, p]

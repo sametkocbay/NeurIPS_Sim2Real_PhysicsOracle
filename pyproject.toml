@@ -8,7 +8,7 @@ dependencies = [
     "torch==2.2.2",
     "numpy==1.26.4",
     "pyyaml",          # config files (training only)
-    "h5py",            # tools/make_cache.py only (reads the raw competition data)
+    "h5py",            # rpde/tools/make_cache.py only (reads the raw competition data)
 ]
 
 [project.optional-dependencies]

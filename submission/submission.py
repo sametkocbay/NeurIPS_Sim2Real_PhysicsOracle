@@ -1,5 +1,5 @@
 """RealPDE Track 1 submission, lean runtime: the compiled ensemble graph (aot/predict_b{B}.so + aot/kernels/*.cubin,
-built by tools/aot_build_ens.py) called through the AOTInductor C API, and nothing else in the timed path.
+built by rpde/tools/aot_build_ens.py) called through the AOTInductor C API, and nothing else in the timed path.
 
 Verified bit-identical to the reference runtime it replaced (AOT path and eager fallback).
 Removed from the timed path: per-call logging and bookkeeping, the diag census, the float16 option, and the copy of

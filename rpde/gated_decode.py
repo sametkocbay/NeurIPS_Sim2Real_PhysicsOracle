@@ -22,8 +22,8 @@ from rpde.constants import U_PER_RE
 
 __all__ = ["GATE_TABLES", "GATE_COEFFS", "gated_decode"]
 
-# All parameters are passed in (`params`): the data tables, fitted from train_real by tools/fit_gate.py, and the
-# decode coefficients, set in configs/final.yaml (submission.gate). tools/fit_gate.py --out writes both.
+# All parameters are passed in (`params`): the data tables, fitted from train_real by rpde/tools/fit_gate.py, and the
+# decode coefficients, set in configs/final.yaml (submission.gate). rpde/tools/fit_gate.py --out writes both.
 GATE_TABLES = ("aoa_keys", "tops", "centroids", "sd")
 GATE_COEFFS = ("c1", "decay_lo", "decay_hi", "lam", "lam_far", "c1_out", "re_step")
 

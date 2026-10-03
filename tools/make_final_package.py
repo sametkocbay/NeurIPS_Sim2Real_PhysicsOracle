@@ -28,9 +28,6 @@ FILES = {
     "submission/submission.py": "submission/submission.py",
     "third_party/realpde_kit/scoring.py": "third_party/realpde_kit/scoring.py",
     "third_party/realpde_kit/README.md": "third_party/realpde_kit/README.md",
-    **{f"tools/{f}": f"tools/{f}" for f in ("__init__.py", "make_cache.py", "make_sample_inputs.py",
-                                             "aot_build_ens.py", "pack_submission.py", "strip_ckpt.py", "fit_gate.py",
-                                             "make_final_package.py")},
     # logs of the training runs behind Codabench submission 948641 (exported from Weights & Biases)
     **{f"training_logs_948641/{r}/{f}": f"logs/wandb/{r}/{f}" for r in ("fm_all_s3", "fm_all_s4")
        for f in ("output_log.txt", "history.txt", "config.yaml")},

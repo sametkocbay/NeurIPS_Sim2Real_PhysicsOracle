@@ -1,178 +1,127 @@
-<div align="center">
-
 # PhysicsOracle
 
-**NeurIPS 2026 RealPDE Challenge, Track 1: Simulation-to-Real · Physics-Scaffolded Axial Transformer**
+Repository for Team PhysicsOracle's NeurIPS 2026 RealPDE Competition, Track 1 submission.
 
-Maximilian Leutschafft<sup>1</sup> · Oscar Breiner<sup>1</sup> · Samet Kocbay<sup>1</sup>
+Samet Kocbay · Maximilian Leutschafft · Oscar Breiner  — Technical University of Munich
 
-<sup>1</sup>Technical University of Munich (M.Sc. students)
+This repository is used to create the final submission consisting of a docker image and a .zip file. The `README.md` you are reading explains how the submission is created, how it should look like and how to test it. For the readme of the submission refer to [final/README.md](final/README.md). For details about the submitted model, architecture and training, see [final/METHOD.md](final/METHOD.md).
 
-Team PhysicsOracle
+## Repository layout
 
-![final score](https://img.shields.io/badge/hidden--set%20final%20score-82.01-1a7f37)
-![parameters](https://img.shields.io/badge/parameters-2%20%C3%97%203.44%20M-0969da)
-![inference](https://img.shields.io/badge/inference-1.1%20ms%20per%20window%20(A100)-0969da)
-![pytorch](https://img.shields.io/badge/PyTorch-2.2.2-ee4c2c)
+```text
+├── README.md                         # repository guide
+├── solution.py                       # official training and prediction entry points
+├── pyproject.toml                    # local Python environment
+├── configs/
+│   └── final.yaml                    # training recipe and submission settings
+├── final/                            # source files for submission documentation
+│   ├── Dockerfile                    # training image definition
+│   ├── README.md                     # submission instructions
+│   ├── METHOD.md                     # method description
+│   └── figures/                      # SVGs referenced by METHOD.md
+├── rpde/                             # training, model and inference implementation
+│   ├── cores/axial.py                # the single transformer core implementation
+│   └── tools/                        # shipped data, compilation and predictor-assembly tools
+├── submission/
+│   └── submission.py                 # predictor runtime copied into training outputs
+├── tools/                            # repository-only packaging and figure tools
+│   ├── make_final_package.py
+│   ├── make_architecture_figure.py
+│   ├── make_improvement_figure.py
+│   └── figure_data/submissions.csv    # score history used by the improvement figure
+├── third_party/realpde_kit/           # organizer scorer and provenance README
+├── logs/
+│   ├── wandb/                        # original training logs included in submission
+│   └── reproduction_4090/            # local reproduction evidence, excluded from submission
+├── weights/                          # saved members from the original submission
+└── realpde_final_starting_kit_track1/  # organizer instructions and templates
+```
 
-</div>
+## Submission repository layout
 
-This repository holds the model of team PhysicsOracle for the NeurIPS 2026 RealPDE Competition, Track 1:
-Simulation-to-Real Transfer Learning ([Codabench](https://www.codabench.org/), [dataset](https://huggingface.co/datasets/AI4Science-WestlakeU/RealPDE-Competition-Data)).
-The task is to forecast 20 frames of measured (PIV) flow around an airfoil, with uncertainty bands, from simulated and
-measured training data. Our final submission scored 82.01 on the hidden development set.
+The generated `dist/final/package/` folder is the Docker build context. Its contents are copied into `/workspace` in the image and included under `physicsoracle_track1/` in the ZIP:
 
-Our model combines a parameter-free physics scaffold (freestream estimation, mask geometry, a convected-turbulence
-baseline) with a 3.4 M-parameter axial transformer that predicts the correction to that baseline, a zero-mean
-fluctuation field and residual quantiles. It is trained jointly on real PIV and on simulation made to resemble PIV.
-Two seeds are combined by an energy-preserving ensemble decode and compiled ahead of time into a single graph; the
-result is **+4.38** over the physics baseline alone.
+```text
+/workspace/
+├── Dockerfile
+├── README.md                         # from final/README.md
+├── METHOD.md                         # from final/METHOD.md
+├── solution.py
+├── configs/final.yaml
+├── figures/
+│   ├── architecture.svg
+│   └── progress.svg
+├── rpde/                             # model, training and inference code
+│   ├── cores/axial.py
+│   └── tools/                        # helpers called by train()
+├── submission/submission.py
+├── third_party/realpde_kit/
+│   ├── scoring.py
+│   └── README.md
+└── training_logs_948641/
+    ├── fm_all_s3/                    # output_log.txt, history.txt, config.yaml
+    └── fm_all_s4/                    # output_log.txt, history.txt, config.yaml
+```
 
-<p align="center">
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/figures/progress_dark.svg">
-  <img src="docs/figures/progress.svg" alt="Hidden-set score of all 17 submissions" width="100%">
-</picture>
-<br><sub><b>Figure 1.</b> Hidden-set final score of all 17 submissions of the development phase (9 to 27 September
-2026). Line: best score so far; filled markers: new best; open markers: submissions that did not improve (red labels:
-the cause). The y axis changes scale at 81 to resolve the later, smaller steps.</sub>
-</p>
+Training data is mounted separately at `/data`; trained weights and compiled graphs are generated in `/output`. The top-level development `tools/`, saved `weights/` and reproduction logs are excluded from the package.
 
----
+## Assemble the training submission
 
-## 1 &nbsp; Task
-
-| | |
-|---|---|
-| **Input** | 20 consecutive PIV frames `u, v` (`p = 0`) on a 32 x 64 grid, `(N, 20, 32, 64, 3)` |
-| **Output** | the next 20 frames and a band `lower <= prediction <= upper`, each `(N, 20, 32, 64, 3)` |
-| **Data** | 81 real PIV trajectories (Re 3,750 to 26,700; angle of attack 0 to 20 deg) and 100 CFD trajectories of the same geometry with pressure |
-| **Test inputs** | real measurements, partly at Reynolds numbers not present in the real training data (hidden rows Re 15,225 and 27,975) |
-| **Evaluation** | a fresh process per call in `pytorch/pytorch:2.2.2-cuda12.1-cudnn8-runtime`; only torch, numpy and the standard library |
-
-The leaderboard combines five subscores into one `final_score`:
-
-| subscore | measures |
-|---|---|
-| `rel_l2` | relative L2 error of the predicted velocity field |
-| `tke` | error of the turbulent kinetic energy map, `0.5 (var_t u + var_t v)` per cell |
-| `mvpe` | error of the time-mean velocity at 36 probes in the wake |
-| `sps` | band quality: coverage of the target, penalised by band width and weighted by prediction accuracy |
-| `time` | wall-clock inference time per window |
-
-## 2 &nbsp; Method
-
-<p align="center">
-<img src="docs/architecture.svg" alt="Architecture" width="62%">
-</p>
-
-**Physics scaffold.** The input is normalised by a freestream velocity estimated from the undisturbed rows, which makes
-one model valid across an order of magnitude in Reynolds number. The airfoil mask (cells never measured) gives the
-geometry, and its centroid and extent encode the angle of attack. A frozen-turbulence baseline, the time-mean field plus
-the last fluctuation convected downstream, forms the prior; the network predicts only the correction.
-
-**Axial transformer.** The 20 input frames are folded into channels and the field is split into 1 x 2 patches (1024
-tokens of width 128). Six blocks alternate attention along the streamwise and cross-stream axes, followed by an MLP.
-Every sub-layer is modulated by FiLM from an 8-dimensional description of the flow regime (freestream speed, time
-step, advection per frame, mask geometry, real or simulated).
-
-**Heads.** Per future frame and cell: a correction to the baseline mean, a fluctuation field with zero temporal mean,
-and five non-crossing residual quantiles.
-
-**Training.** 75 % real and 25 % simulated windows. The simulated ones are strided to the real convective time step and
-given the real PIV mask, drop-outs and noise. Half of all windows are mirrored in the cross-stream direction, which is
-the exact flow at the negative angle of attack. Relative L2 on mean and prediction, a pinball loss on the quantiles, a
-TKE loss and, from epoch 40, a differentiable version of the band score. The shipped weights are the EMA of epoch 59
-of a 100-epoch cosine schedule, chosen on held-out Reynolds rows.
-
-**Ensemble decode.** The two members' means and quantiles are averaged. Averaging two fluctuation fields that are out of
-phase removes energy exactly where the turbulence is strongest, so the averaged fluctuation is rescaled per cell to
-the members' mean energy. The band is centred on the mean, and its width maximises the expected band score under the
-predicted quantiles.
-
-Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-
-## 3 &nbsp; Results
-
-**Final submission** (hidden development set, 27 September 2026):
-
-| `rel_l2` | `tke` | `mvpe` | `time` | `sps` | **`final_score`** |
-|:---:|:---:|:---:|:---:|:---:|:---:|
-| 94.892 | 79.708 | 94.216 | 91.862 | 44.377 | **82.010** |
-
-**Where the improvement came from.** Each row is the change in the hidden-set score between two submissions (Figure 1):
-
-| stage | submissions | change | main changes |
-|---|---|---:|---|
-| learned model | S1 → S3 | +2.28 | axial transformer on top of the physics baseline, all training data |
-| training recipe | S3 → S7final | +1.38 | patching and time folding, learning rate, pinball loss and differentiable band reward |
-| inference and decode | S7final → S12 | +0.43 | ahead-of-time compilation, gated decode above the training Reynolds range, wider MLP |
-| architecture | S12 → S14 | +0.12 | all 20 frames in one temporal token, 1 x 2 patches, 3.4 M instead of 10.4 M parameters |
-| ensemble | S14 → ENS2 | +0.09 | two seeds combined inside one compiled graph |
-| sim-to-real and decode | ENS2 → FINAL | +0.08 | mirror augmentation, all frames for training, energy-preserving combine, fluctuation scale 0.70, band scale 0.95, fixed epoch 59 |
-| **total** | S1 → FINAL | **+4.38** | |
-
-<p align="center">
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/figures/qualitative_dark.png">
-  <img src="docs/figures/qualitative.png" alt="Measured and predicted speed, error and band width" width="100%">
-</picture>
-<br><sub><b>Figure 2.</b> Velocity magnitude of one real window (Re 26,700, 10 deg; from the training data) at lead
-times 1, 10 and 20: measurement, prediction of the final ensemble, absolute error and width of the predicted band.
-Fine structure is forecast at short lead; at long lead the prediction tends to the mean wake, and the band widens
-where the errors grow.</sub>
-</p>
-
-**Held-out generalisation.** With whole Reynolds rows removed from training, the final recipe scores within 0.01 of the
-best epoch on every held-out row at epoch 59. Compared with the same model without mirror augmentation, the final
-recipe (mirror augmentation and all-frame training) scores +0.12 on the held-out high-Re corner rows and is on par on
-held-out Reynolds rows; mirror augmentation alone adds +0.44 per model at an angle of attack beyond the training range.
-
-## 4 &nbsp; Reproducing
+Run from the repository root:
 
 ```bash
-uv sync                                                    # python 3.10, torch 2.2.2 + CUDA 12.1, numpy 1.26
-python tools/make_cache.py --raw /path/to/raw              # public data -> data/cache32 (docs/TRAINING.md)
+python tools/make_final_package.py
+docker build -t physicsoracle dist/final/package
+```
 
+The first command assembles `dist/final/package/` and creates `dist/final/physicsoracle_track1.zip`. The second builds the Docker image from that same folder. The packaging script does not build or upload the image.
+
+The Dockerfile copies the assembled folder into `/workspace`. Training reads the mounted `/data` directory and writes inference artifacts into the mounted `/output` directory. Follow [final/README.md](final/README.md#how-to-reproduce) for the container training command and the [organizer instructions](realpde_final_starting_kit_track1/FINAL_SUBMISSION.md) for delivery requirements.
+
+Edit source files in this repository, then rerun the packaging command before building the image. Changes to source files do not automatically update an existing package or ZIP.
+
+## Work on training locally
+
+Use Python 3.10. If using `uv`, install the dependencies declared in `pyproject.toml`:
+
+```bash
+uv sync
+source .venv/bin/activate
+```
+
+Prepare the released data, whose parent directory contains `train_real/` and `train_sim/`, then train individual members:
+
+```bash
+python rpde/tools/make_cache.py --raw /path/to/train_data
 python -m rpde.train --config configs/final.yaml --fold full --seed 3 --name fm_all_s3
 python -m rpde.train --config configs/final.yaml --fold full --seed 4 --name fm_all_s4
-
-python tools/make_sample_inputs.py
-python tools/fit_gate.py --out build/gate.json --check   # gated decode: tables from train_real + coefficients
-for b in 5,10 2,4 3,1; do
-  python tools/aot_build_ens.py build/aot runs/fm_all_s3/ep59.pth,runs/fm_all_s4/ep59.pth \
-      gamma=0.70 band_scale=0.95 energy_preserve=1 gated=build/gate.json batches=$b
-done
-python tools/pack_submission.py --aot build/aot --members runs/fm_all_s3/ep59.pth runs/fm_all_s4/ep59.pth
 ```
 
-Each member trains in about two hours on one A100 or RTX 4090. The trained members of the final submission are in
-[`weights/`](weights/), so the last three steps also work without training. See [docs/TRAINING.md](docs/TRAINING.md)
-(data, recipe, choice of epoch) and [docs/SUBMISSION.md](docs/SUBMISSION.md) (compilation, packaging, runtime).
+The default cache is `data/cache32/`; set `RPDE_CACHE` to use another location. Training writes to `runs/<name>/`, including `ep59.pth`, `log.txt` and the resolved configuration. These commands train members only. The full `solution.train()` pipeline also fits the gate tables, compiles the ensemble and assembles the predictor. Use the Docker environment for the pinned training and CUDA compilation toolchain.
 
-<details>
-<summary><b>Repository layout</b></summary>
+## Code entry points
 
+| File | Responsibility |
+|---|---|
+| `solution.py` | `train(data_dir, output_dir, device)` and `load_predictor(output_dir, device)` |
+| `rpde/train.py`, `rpde/data.py`, `rpde/losses.py` | training loop, data sampling and losses |
+| `rpde/scaffold.py`, `rpde/cores/axial.py` | model implementation |
+| `rpde/ensemble_predict.py`, `rpde/gated_decode.py`, `rpde/decode.py` | ensemble and output decoding |
+| `rpde/tools/aot_build_ens.py` | compile the trained ensemble |
+| `rpde/tools/pack_submission.py` | assemble the inference artifacts used after training |
+| `tools/make_final_package.py` | assemble the training package and ZIP |
+
+The training package and inference artifacts are different outputs. `load_predictor()` loads the generated `/output` artifacts; keep its weights, `ens_cfg.json`, runtime code and compiled graphs together.
+
+## Update the documentation and figures
+
+Keep submission instructions in `final/README.md` and the method description in `final/METHOD.md`.
+
+Figure generation requires Matplotlib separately from the training dependencies:
+
+```bash
+python tools/make_architecture_figure.py
+python tools/make_improvement_figure.py --output-dir final/figures --font-scale 1.15 --theme light
 ```
-configs/final.yaml          training recipe of both members
-rpde/
-  scaffold.py               preprocessing, advective baseline, input volume, heads, full model
-  cores/axial.py            axial transformer core
-  data.py                   data cache, windows, sim-to-real and mirror augmentation, held-out folds
-  losses.py, decode.py      training losses, quantile band decode
-  train.py                  training loop (EMA, cosine schedule, snapshots)
-  ensemble_predict.py       two-member combine and decode, the graph compiled for submission
-  gated_decode.py           decode adjustment above the training Reynolds range
-  fastinf.py, aot_runner.py fp16 fast path used for compilation, compiler-free loader
-submission/submission.py    predict() runtime shipped in the zip
-tools/                      data cache, sample inputs, compilation, checkpoint stripping, packaging, figures
-weights/                    the two final members (EMA, epoch 59)
-third_party/realpde_kit/    the organisers' scoring reference, used for validation
-docs/                       ARCHITECTURE, TRAINING, SUBMISSION, figures
-```
-</details>
 
-## Acknowledgements
-
-We thank the organisers of the NeurIPS 2026 RealPDE Competition for the data, the starting kit and the evaluation
-platform. `third_party/realpde_kit/scoring.py` is their scoring reference, included unmodified.
+The architecture command writes `final/figures/architecture.svg`. The improvement command writes `final/figures/progress.svg` from `tools/figure_data/submissions.csv`. Inspect regenerated figures before packaging them.

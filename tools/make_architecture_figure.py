@@ -1,11 +1,11 @@
 #!/usr/bin/env python
-"""Generate the compact architecture overview used by README and METHOD.md.
+"""Generate the compact architecture overview used by final/METHOD.md.
 
-    python tools/make_architecture.py
-    python tools/make_architecture.py --preview /tmp/architecture.png
-    python tools/make_architecture.py --output-dir /tmp/architecture-review
+    python tools/make_architecture_figure.py
+    python tools/make_architecture_figure.py --preview /tmp/architecture.png
+    python tools/make_architecture_figure.py --output-dir /tmp/architecture-review
 
-Uses matplotlib, like tools/make_figures.py; no model, GPU or data required.
+Uses matplotlib, like tools/make_improvement_figure.py; no model, GPU or data required.
 Rendered text bounds are checked before writing. SVG glyphs are embedded as
 paths so the type sizes and line breaks remain consistent across renderers.
 """
@@ -148,7 +148,7 @@ def architecture():
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('--output-dir', type=Path, help='Review directory instead of the repository destinations.')
+    ap.add_argument('--output-dir', type=Path, help='Output directory (default: final/figures).')
     ap.add_argument('--preview', type=Path, help='Optional PNG render for visual inspection.')
     args = ap.parse_args()
     fig = architecture()
@@ -156,7 +156,7 @@ def main():
     fig.savefig(buf, format='svg', metadata={'Date': None, 'Title': 'PhysicsOracle architecture',
         'Description': 'Physics scaffold, axial transformer, output heads and two-member ensemble decode.'})
     data = ('\n'.join(line.rstrip() for line in buf.getvalue().decode('utf-8').splitlines()) + '\n').encode('utf-8')
-    destinations = [args.output_dir / 'architecture.svg'] if args.output_dir else [ROOT / 'docs' / 'architecture.svg', ROOT / 'final' / 'figures' / 'architecture.svg']
+    destinations = [args.output_dir / 'architecture.svg'] if args.output_dir else [ROOT / 'final' / 'figures' / 'architecture.svg']
     for path in destinations:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
