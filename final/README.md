@@ -67,3 +67,5 @@ Note: The gated decode uses reference tables fitted from `train_real` during `tr
 
 - The assembled package includes the original W&B exports in `training_logs_948641/` as the submission logs. In the repository, these are under `logs/wandb/`. Logged epoch 58 corresponds to the checkpoint after 59 completed epochs.
 - Keep `ens_cfg.json` alongside the model checkpoints in the output directory. The eager Python/PyTorch fallback requires it to load the ensemble settings and gated-decode reference tables.
+- `train()` writes its logs to `/output/logs/`: `solution.log`, `stages.log`, the member training logs, `gate.json` and `summary.json` (stage times, peak GPU memory and the compiled batch sizes, expected 1, 2, 3, 4, 5 and 10).
+- Adding `-e RPDE_SMOKE=1` to the train command runs the same pipeline with one short epoch and one compiled group, to check the setup in minutes. Its output is not the submitted model.
