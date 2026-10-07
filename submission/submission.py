@@ -14,6 +14,7 @@ import re
 import shutil
 import sys
 import tempfile
+import traceback
 
 import numpy as np
 import torch
@@ -130,6 +131,10 @@ def _load_aot():
 
 _SHIM_DEL = None
 _G = _load_aot()
+if not _G:
+    print("[submission] WARNING: no compiled AOT graphs were loaded (check aot/predict_b*.so "
+          "and aot/kernels/). Using the eager PyTorch fallback from the start. Predictions are "
+          "unchanged, but inference is roughly 3x slower.", file=sys.stderr, flush=True)
 _KEEP = []        # every pooled buffer handed out stays referenced for the process lifetime
 _IN = {}          # batch -> pinned input staging buffer (reused: consumed before predict returns)
 _SCRATCH = {}     # batch -> pinned output buffer (3,B,...) reused across calls; its results are copied out
@@ -238,8 +243,14 @@ def predict(input_array, metadata=None):
     if _G:
         try:
             return _run(x)
-        except Exception:
+        except Exception as exc:
             _G.clear()
+            print("[submission] WARNING: compiled AOT inference failed "
+                  f"({type(exc).__name__}: {exc}). Switching permanently to the eager PyTorch "
+                  "fallback for all further calls. Predictions are unchanged, but inference "
+                  "is roughly 3x slower, so the Time score will suffer.",
+                  file=sys.stderr, flush=True)
+            traceback.print_exc()
     return _fallback(x)
 
 
