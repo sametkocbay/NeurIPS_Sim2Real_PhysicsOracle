@@ -1,7 +1,7 @@
 # PhysicsOracle: Track 1 method
 
 ## 1. Summary
-A physics scaffold estimates the freestream velocity, reads the airfoil geometry from the PIV mask and builds baseline forecast. A 3.4 M-parameter axial transformer predicts the correction to that baseline, a zero-mean fluctuation field and residual quantiles. What matters most is the axial transformer architecture allowing to predict high-frequency modes while maintaining low inference and training cost.
+A physics scaffold estimates the freestream velocity, reads the airfoil geometry from the PIV mask and builds a baseline forecast. A 3.4 M-parameter axial transformer predicts a correction to that baseline, a zero-mean fluctuation field and residual quantiles. What matters most is the axial transformer architecture allowing to predict high-frequency modes while maintaining low inference time and training cost.
 
 
 ## 2. Model
@@ -16,12 +16,12 @@ The model takes **20 measured velocity frames on a 32 × 64 grid** and forecasts
 **Physics scaffold.** We estimate the incoming flow speed from the nonzero streamwise velocities in the top eight rows and divide the input velocities by this estimate. This reduces differences in velocity scale between flow conditions. Cells with no streamwise measurement throughout the input window form a mask describing the airfoil and unmeasured regions. We also record how frequently measurements are missing at each cell.
 The scaffold builds an initial forecast by blending the latest velocity field with a simple downstream-motion forecast. The latter takes the input’s time-average field and adds the latest frame’s deviation from that average, shifted downstream. Two learned scalars control the blend and the displacement. The transformer then learns corrections to this baseline.
 
-**Axial transformer.** The 20 input frames are folded into channels, and neighboring cells are grouped into 1 × 2 patches. This produces 1,024 tokens, each represented by 128 features. Six transformer blocks with eight heads each exchange information first along the streamwise direction and then across it, followed by a feed-forward network.
+**Axial transformer.** The 20 input frames are folded into channels, and neighboring cells are grouped into 1 × 2 patches. This produces 1,024 tokens, each represented by 128 features. Six transformer blocks with eight heads each exchange information first along the streamwise direction and then across it, followed by a feed-forward network. We don't use attention within the temporal dimension.
 An additional vector of eight numbers describes the flow speed, relative time between frames, downstream displacement per frame, mask position and size, and whether the input is real or simulated. Through FiLM, these numbers adjust the scaling, offsets and contribution of each transformer sub-layer.
 
 **Output heads.** For every future frame, grid cell and velocity component, the network produces three outputs: a correction to the baseline, a fluctuation contribution, and five estimated percentiles of the deviation from the corrected baseline. The fluctuation contribution is constrained to average to zero over the 20 forecast frames. The percentiles (10%, 25%, 50%, 75% and 90%) remain ordered and describe the predicted uncertainty.
 
-**Ensemble decode.** We average the members’ corrected baselines and corresponding percentiles. We also average their fluctuation contributions, then rescale them to compensate for fluctuation energy lost through averaging, subject to a cap. Further adjustments damp fluctuations with forecast lead time and, above the estimated training range, shift the forecast toward the measured input average.
+**Ensemble decode.** We average the members’ corrected baselines and corresponding percentiles. We also average their fluctuation contributions per cell, then rescale them to compensate for fluctuation energy lost through averaging. Further adjustments damp fluctuations with forecast lead time and, above the estimated training range, shift the forecast toward the measured input average.
 
 **Starting point.** We start with random initialization and do not use a provided baseline.
 
@@ -29,7 +29,7 @@ An additional vector of eight numbers describes the flow speed, relative time be
 ## 3. Data
 **Training data and sampling.** We use 81 real PIV trajectories and 100 simulated trajectories, downsampled to the 32 × 64 evaluation grid. Each epoch contains 6,000 randomly sampled windows of 20 input and 20 target frames. Samples come from real data with 75% probability and simulation with 25% probability. Simulated regimes without corresponding real measurements receive twice the sampling weight of other simulated regimes. Window start positions are sampled uniformly across all valid positions. Simulation frames are subsampled to approximate the real data’s convective time step.
 
-**Validation.** The final training runs reserve no independent validation data. The 243 monitoring windows overlap with data available for training; the shipped checkpoints come from the fixed training duration described in Section 4. Separate development folds hold out whole Reynolds-number rows or selected Reynolds-number and angle combinations.
+**Validation.** The final training run uses all data available, reserving no validation set. During development we used separate folds holding out whole Reynolds-number rows or selected Reynolds-number and angle combinations to explore the generalization capabilites. Using epoch 59 for submission was selected based on these hold out runs.
 
 **Augmentation.** Simulated input and target frames receive real measurement masks, random missing vectors and noise to resemble PIV data. Each real or simulated window has a 50% probability of being reflected vertically, with the cross-stream velocity component negated. Sampling and augmentation are reproducible from the seed, epoch and sample index.
 
@@ -43,11 +43,11 @@ Both members follow the same training stage. They run sequentially with differen
 |---|---|---|---|---|---|
 | 1, repeated for two seeds | Real and simulated windows, sampled 75/25 | Relative L2 on the central forecast and prediction; 4 × summed pinball losses; 0.2 × TKE-map loss; differentiable SPS reward from the 41st epoch | AdamW, betas (0.9, 0.95), learning rate 0.001, weight decay 0.05; 5 warm-up epochs followed by cosine decay over a 100-epoch schedule | Stop after 59 epochs: 750 steps per epoch, 44,250 steps per member | 8 |
 
-**Training details.** We use bf16 mixed precision, gradient clipping at 1.0 and an exponential moving average (EMA) of the weights with decay 0.9995. Biases, normalization parameters and baseline scalars are exempt from weight decay. The central forecast is detached when computing the prediction, TKE and SPS losses. L2, pinball and SPS losses exclude missing target values; TKE uses full-field temporal variance. SPS coverage smoothing decreases from 0.02 to approximately 0.00802 by the stopping epoch.
+**Training details.** We use bf16 mixed precision, gradient clipping at 1.0 and an exponential moving average (EMA) of the weights with decay 0.9995. Biases, normalization parameters and baseline scalars are exempt from weight decay. The central forecast is detached when computing the prediction, TKE and SPS losses. L2, pinball and SPS losses exclude missing target values. TKE uses full-field temporal variance. SPS coverage smoothing decreases from 0.02 to approximately 0.00802 by the stopping epoch.
 
 **Checkpoint selection.** Each member ships its EMA weights after epoch 59, fixed in the configuration. The trainer also saves a checkpoint selected by the monitoring score, but that checkpoint is not used for submission.
 
-**Seeds and observed variation.** We use seeds 3 and 4. At epoch 59, their monitoring scores are 85.88 and 85.91, with relative L2 errors of 0.0757 and 0.0755. These monitoring windows overlap with training data. On the hidden development set, the recorded single-member and two-member ensemble submissions scored 81.84 and 81.93.
+**Seeds and observed variation.** We use seeds 3 and 4. At epoch 59, their monitoring scores are 85.88 and 85.91, with relative L2 errors of 0.0757 and 0.0755. These monitoring windows overlap with training data. On our hidden development set, the recorded single-members scored within a variance of about +/- 0.007 (replicating the codabench score).
 
 ## 5. Uncertainty bounds
 **Quantiles.** Each member predicts five percentiles (10%, 25%, 50%, 75% and 90%) of the deviation from its central velocity forecast, trained with a pinball loss. We average corresponding percentiles across the two members.
@@ -65,16 +65,15 @@ Both members follow the same training stage. They run sequentially with differen
 
 
 ## 6. Inference (Track 1)
-**Per call.** `predict` transfers the input through pinned host memory to the GPU and runs both members and decoding in a compiled graph. Other batch sizes are split into supported sizes. Predictions and bounds return as float32 arrays, with pressure zero.
+**Per call.** `predict` transfers the input through pinned host memory to the GPU and runs both members and decoding in one compiled graph. Batch sizes not precompiled are combined by combination of precompiled batch sizes. Predictions and bounds return as float32 arrays, with pressure zero.
 
-**Precision.** The transformer core uses fp16; preprocessing, output heads and decoding use fp32. Attention uses PyTorch’s math implementation.
+**Precision.** The transformer core uses fp16. Preprocessing, output heads and decoding use fp32. Attention uses PyTorch’s math implementation.
 
-**Compilation and loading.** AOTInductor compiles batch sizes 1, 2, 3, 4, 5 and 10 on the training GPU, with max-autotune. Initialization loads the graphs through their C API, warms them up and prepares buffers. No runtime compiler is needed. Compiled execution failures trigger an eager PyTorch fallback.
+**Compilation and loading.** AOTInductor compiles batch sizes 1, 2, 3, 4, 5 and 10 on the training GPU, with max-autotune. Initialization loads the graphs through their C API, warms them up and prepares buffers. No runtime compiler is needed. Compiled execution failures trigger an eager PyTorch fallback and is logged.
 
 **Caching.** Loaded graphs, weights and reusable buffers remain in memory. Prediction results are not cached for reuse.
 
-**Ensemble adjustments.** Central forecasts and quantiles are averaged; averaged fluctuations are rescaled to retain energy, then damped with lead time. Above the estimated real training range, the forecast’s average is pulled toward the input average. Reference tables are fitted from `train_real`.
-
+**Ensemble adjustments.** Central forecasts and quantiles are averaged. Averaged fluctuations are rescaled to retain energy, then damped linearly over time. For OOD samples, the forecast’s average is pulled toward the input average.
 
 ## 7. Speed
 What we did for the Time score (91.862 on Codabench):
@@ -92,7 +91,7 @@ We measured 1.1 ms per window at batch 5 on an A100, and 1.6 ms on an RTX 4090.
 </p>
 
 
-Selection of our most relevant changes improving the submission score:
+The changes that moved the hidden development score most, grouped by submission (Codabench `final_score`):
 
 | Change | Effect |
 |---|---|
