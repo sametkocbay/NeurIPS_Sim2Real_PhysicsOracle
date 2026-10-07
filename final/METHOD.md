@@ -108,8 +108,7 @@ Selection of our most relevant changes improving the submission score:
 
 ## 9. Compute
 - **Hardware of the run behind the submission:** NVIDIA RTX 4090, 504 GB RAM, 64 CPU cores
-- **Training time:** 82 min per member to epoch 59. (The original runs continued
-  to epoch 100 and took 299 min in total)
+- **Training time:** Each member approximately trains for ~150 min until 100 epochs (so in total 2 x 150 min), but since we take the 59th epochs state for the final submission each member finishes after approximately ~85 min. The compilation afterwards takes an additional approximately ~15 min for both members combined as it places both in one graph. So in total (training 2 members + compilation) 85 * 2 + 15 = 185 min.
 - **Peak GPU memory:** 3.17 GiB allocated by PyTorch per member (3.31 GiB reserved) 
 
 ## 10. References
