@@ -98,6 +98,8 @@ def _load_aot():
     """In place first; on failure (e.g. a noexec mount) from a copy in another writable location."""
     if _DEV.type != "cuda" or os.environ.get("RPDE_AOT_OFF") == "1":
         return {}
+    if not glob.glob(os.path.join(_AOT_DIR, "predict_b*.so")):       # nothing compiled: no copies to try
+        return {}
     global _SHIM_DEL
     shim = _shim()
     s = shim
@@ -113,19 +115,23 @@ def _load_aot():
         fn.restype = ctypes.c_int32
     _SHIM_DEL = s.aoti_torch_delete_tensor_object
     for base in (None, "/dev/shm", tempfile.gettempdir(), os.getcwd(), os.path.expanduser("~")):
+        tmp = None
         try:
             if base is None:
                 d = _AOT_DIR
             else:
                 if not (os.path.isdir(base) and os.access(base, os.W_OK)):
                     continue
-                d = os.path.join(tempfile.mkdtemp(prefix="rpde_aot_", dir=base), "aot")
+                tmp = tempfile.mkdtemp(prefix="rpde_aot_", dir=base)
+                d = os.path.join(tmp, "aot")
                 shutil.copytree(_AOT_DIR, d)
             got = _load_graphs(d, shim)
             if got:
                 return got
         except Exception:
-            continue
+            pass
+        if tmp is not None:                         # this copy did not load: do not leave it behind
+            shutil.rmtree(tmp, ignore_errors=True)
     return {}
 
 
@@ -175,7 +181,15 @@ def _run(x):
     else:                                           # other sizes: chunk into the largest artefacts
         sizes, i = sorted(_G, reverse=True), 0
         while i < B:
-            n = next(s for s in sizes if s <= B - i)
+            n = next((s for s in sizes if s <= B - i), None)
+            if n is None:                           # a size failed to build and no compiled size fits the rest:
+                r, n = B - i, min(sizes)            # pad the rest to the smallest one with copies of its last window
+                xp = torch.cat([xt[i:], xt[-1:].expand(n - r, *xt.shape[1:])]).contiguous()
+                hs, views = _G[n].run(xp)
+                handles += hs
+                for k in range(3):
+                    host[k, i:].copy_(views[k][:r], non_blocking=True)
+                break
             hs, views = _G[n].run(xt[i:i + n])
             handles += hs
             for k in range(3):
@@ -192,6 +206,7 @@ def _run(x):
 
 # ---------------------------------------------------------------------------------------------- eager fallback
 _ENS = None
+_FALLBACK_CHUNK = 10    # windows per eager forward: bounds GPU memory for any N (samples are independent)
 
 
 @torch.no_grad()
@@ -231,7 +246,8 @@ def _fallback(x):
                                                             enable_mem_efficient=False))
         for fi in fis:
             st.enter_context(fi._apply())
-        pred, lower, upper = ens(xt)
+        outs = [ens(xt[i:i + _FALLBACK_CHUNK]) for i in range(0, xt.shape[0], _FALLBACK_CHUNK)]
+        pred, lower, upper = (torch.cat([o[k] for o in outs]) for k in range(3))
     if _DEV.type == "cuda":
         torch.cuda.synchronize()
     return {"prediction": pred.cpu().numpy(), "lower": lower.cpu().numpy(), "upper": upper.cpu().numpy()}

@@ -80,6 +80,36 @@ The Dockerfile copies the assembled folder into `/workspace`. Training reads the
 
 Edit source files in this repository, then rerun the packaging command before building the image. Changes to source files do not automatically update an existing package or ZIP.
 
+## Test the image
+
+Running the image needs Docker with the NVIDIA Container Toolkit (`--gpus`). `/path/to/train_data` holds `train_real/` (without `7575_0.h5`) and `train_sim/`, as the organizers mount it. A smoke run checks the whole pipeline in about 5 minutes; then run the organizers' command unchanged:
+
+```bash
+docker run --rm --network none --gpus '"device=0"' --shm-size 32g -e RPDE_SMOKE=1 \
+  -v /path/to/train_data:/data:ro -v /tmp/po_smoke:/output physicsoracle \
+  python -c "import solution; solution.train('/data', '/output', 'cuda')"
+grep -E "WARNING|compiled batch sizes|clean-room" /tmp/po_smoke/logs/solution.log   # expect [1, 5], no WARNING
+
+docker run --rm --network none --gpus '"device=0"' --shm-size 32g \
+  -v /path/to/train_data:/data:ro -v /path/to/output:/output physicsoracle \
+  python -c "import solution; solution.train('/data', '/output', 'cuda')"
+```
+
+The full run must log `compiled batch sizes: [1, 2, 3, 4, 5, 10]` and no `WARNING`. Use a fresh output directory for each run.
+
+## Deliver the package
+
+[FINAL_SUBMISSION.md](realpde_final_starting_kit_track1/FINAL_SUBMISSION.md) asks for the following by October 9, 2026, 24:00 UTC:
+
+1. Push the image to a **private** Docker Hub repository and give the Docker Hub account `w3nhao` read access:
+   ```bash
+   docker tag physicsoracle <dockerhub-user>/physicsoracle-t1:final
+   docker push <dockerhub-user>/physicsoracle-t1:final
+   docker inspect --format '{{index .RepoDigests 0}}' <dockerhub-user>/physicsoracle-t1:final   # name@sha256:...
+   ```
+2. Upload `dist/final/physicsoracle_track1.zip`, built from the same package folder as the image, to Google Drive and create a share link.
+3. Email realpde-competition@googlegroups.com with the image name and digest (`<dockerhub-user>/physicsoracle-t1@sha256:...`), the Codabench submission id `948641`, and the Google Drive link.
+
 ## Work on training locally
 
 Use Python 3.10. If using `uv`, install the dependencies declared in `pyproject.toml`:

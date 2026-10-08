@@ -17,6 +17,7 @@ import importlib.util
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -31,6 +32,8 @@ SUB = _CFG["submission"]                           # seeds, epoch, decode, gate 
 assert int(SUB["epoch"]) == int(_CFG["eval"]["stop_after"]) == int(_CFG["eval"]["save_to"]), \
     "submission.epoch must equal eval.stop_after and eval.save_to"
 SMOKE = os.environ.get("RPDE_SMOKE") == "1"
+# one attempt of one compile group; a hung build is killed and handled like a failed one (about 5 min is normal)
+COMPILE_TIMEOUT_S = float(os.environ.get("RPDE_COMPILE_TIMEOUT_S", 3600))
 
 
 class _Log:
@@ -65,19 +68,38 @@ class _GpuPeak(threading.Thread):
         self._stop.set()
 
 
-def _run(cmd, log, env, logfile):
-    """Run a stage in a fresh interpreter, streaming its output to stdout and to `logfile`."""
+def _run(cmd, log, env, logfile, timeout=None):
+    """Run a stage in a fresh interpreter, streaming its output to stdout and to `logfile`.
+
+    With `timeout` (seconds), the stage runs in its own process group, which is killed as a whole (compile workers
+    included) when the timeout expires; the stage then fails like any other."""
     log("$ " + " ".join(cmd))
     t0 = time.time()
+    expired = []
+
+    def _kill(p):
+        expired.append(True)
+        try:
+            os.killpg(p.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
     with open(logfile, "a", buffering=1) as fh:
-        p = subprocess.Popen(cmd, cwd=HERE, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        p = subprocess.Popen(cmd, cwd=HERE, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                             start_new_session=timeout is not None)
+        timer = threading.Timer(timeout, _kill, (p,)) if timeout else None
+        if timer:
+            timer.start()
         for line in p.stdout:
             sys.stdout.write(line)
             sys.stdout.flush()
             fh.write(line)
         rc = p.wait()
+        if timer:
+            timer.cancel()
     if rc != 0:
-        raise RuntimeError(f"stage failed with exit code {rc}: {' '.join(cmd)}")
+        why = f"killed after the {timeout} s timeout" if expired else f"exit code {rc}"
+        raise RuntimeError(f"stage failed ({why}): {' '.join(cmd)}")
     return time.time() - t0
 
 
@@ -86,6 +108,7 @@ def train(data_dir, output_dir, device):
     out = os.path.abspath(output_dir)
     work = os.path.join(out, "work")
     logs = os.path.join(out, "logs")
+    shutil.rmtree(work, ignore_errors=True)            # a rerun into the same output_dir starts from a clean work dir
     os.makedirs(work, exist_ok=True)
     os.makedirs(logs, exist_ok=True)
     log = _Log(os.path.join(logs, "solution.log"))
@@ -144,21 +167,45 @@ def train(data_dir, output_dir, device):
             cmd.append("autotune=0")
         for attempt in (1, 2):
             try:
-                _run(cmd, log, env, stage_log)
+                _run(cmd, log, env, stage_log, timeout=COMPILE_TIMEOUT_S)
                 break
             except RuntimeError as e:
-                log(f"compile of batches {g} failed (attempt {attempt}): {e}")
+                log(f"compile of batches {g} failed (attempt {attempt}; traceback in {stage_log}): {e}")
     times["compile_s"] = time.time() - t0
     reports = {}
     for rp in sorted(glob.glob(os.path.join(aot, "build_report_*.json"))):
         shutil.copy(rp, logs)
         reports.update(json.load(open(rp))["runs"])
-    log(f"compiled batch sizes: {sorted(int(b) for b in reports)} "
+    # ship only graphs whose build check passed: sane outputs and agreement with the eager ensemble. The tolerances
+    # catch a broken graph only: autotuned fp16 kernels differ from eager by ~1e-4 in the prediction, and the band
+    # width search can switch to a neighbouring width (~3e-3 m/s seen on an RTX A6000)
+    for so in glob.glob(os.path.join(aot, "predict_b*.so")):
+        b = os.path.basename(so)[len("predict_b"):-len(".so")]
+        r = reports.get(b)
+        if r is None or not r["sane"] or not (r["max_dpred"] <= 1e-2 and r["max_dband"] <= 5e-2):   # NaN fails
+            log(f"WARNING: dropping {os.path.basename(so)}: build check "
+                + ("did not finish" if r is None else f"failed ({r})"))
+            os.remove(so)
+            reports.pop(b, None)
+    compiled = sorted(int(b) for b in reports if os.path.isfile(os.path.join(aot, f"predict_b{b}.so")))
+    missing = sorted({int(b) for g in groups for b in g.split(",")} - set(compiled))
+    log(f"compiled batch sizes: {compiled} "
         f"(max |pred - eager| {max([r['max_dpred'] for r in reports.values()] or [float('nan')]):.2e})")
+    if missing:
+        log(f"WARNING: batch sizes {missing} did not compile. "
+            + ("predict() pads or chunks those sizes onto the compiled graphs." if compiled else
+               "No graph compiled: predict() runs the eager PyTorch fallback (same predictions, about 2-3x slower)."))
 
     # 4. package: the Codabench layout, written straight into output_dir; then predict() in a clean interpreter
     sys.path.insert(0, HERE)
     from rpde.tools.pack_submission import assemble, clean_room
+    # an earlier package in output_dir must not leave graphs or weights behind that this run did not produce
+    shutil.rmtree(os.path.join(out, "aot"), ignore_errors=True)
+    shutil.rmtree(os.path.join(out, "rpde"), ignore_errors=True)
+    for p in glob.glob(os.path.join(out, "model_*.pth")) + [os.path.join(out, "submission.py"),
+                                                           os.path.join(out, "ens_cfg.json")]:
+        if os.path.isfile(p):
+            os.remove(p)
     assemble(aot, members, out, ens_cfg=dict(gamma=float(dec["gamma"]), band_scale=float(dec["band_scale"]),
                                              energy_preserve=bool(dec["energy_preserve"]), gated=gate,
                                              mirror_views=False))
@@ -166,8 +213,8 @@ def train(data_dir, output_dir, device):
 
     gpu.stop()
     summary = dict(times_s={k: round(v, 1) for k, v in times.items()}, total_s=round(time.time() - t_start, 1),
-                   peak_gpu_mib_device=gpu.peak_mib if gpu.ok else None, compiled=reports, members=members,
-                   smoke=SMOKE)
+                   peak_gpu_mib_device=gpu.peak_mib if gpu.ok else None, compiled=reports,
+                   compile_missing=missing, members=members, smoke=SMOKE)
     json.dump(summary, open(os.path.join(logs, "summary.json"), "w"), indent=1)
     log(f"summary: {json.dumps({k: summary[k] for k in ('times_s', 'total_s', 'peak_gpu_mib_device')})}")
     if os.environ.get("RPDE_KEEP_WORK") != "1":
