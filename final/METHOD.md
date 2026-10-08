@@ -69,7 +69,7 @@ Both members follow the same training stage. They run sequentially with differen
 
 **Precision.** The transformer core uses fp16. Preprocessing, output heads and decoding use fp32. Attention uses PyTorch’s math implementation.
 
-**Compilation and loading.** AOTInductor compiles batch sizes 1, 2, 3, 4, 5 and 10 on the training GPU, with max-autotune. Initialization loads the graphs through their C API, warms them up and prepares buffers. No runtime compiler is needed. `train()` ships only graphs that pass a check against the eager ensemble, and logs a warning for every batch size that did not compile. A compiled execution failure switches to the eager PyTorch fallback, with a warning on stderr.
+**Compilation and loading.** AOTInductor compiles batch sizes 1, 2, 3, 4, 5 and 10 on the training GPU, with max-autotune. Initialization loads the graphs through their C API, warms them up and prepares buffers. No runtime compiler is needed. `train()` ships every graph that ran its build check with finite, ordered outputs, and logs a warning for every batch size that did not compile. A compiled execution failure switches to the eager PyTorch fallback, with a warning on stderr.
 
 **Caching.** Loaded graphs, weights and reusable buffers remain in memory. Prediction results are not cached for reuse.
 

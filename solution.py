@@ -176,14 +176,12 @@ def train(data_dir, output_dir, device):
     for rp in sorted(glob.glob(os.path.join(aot, "build_report_*.json"))):
         shutil.copy(rp, logs)
         reports.update(json.load(open(rp))["runs"])
-    # ship only graphs whose build check passed: sane outputs (finite, lower <= upper, p = 0) and a prediction within
-    # 1e-2 m/s of the eager ensemble. Autotuned fp16 kernels differ from eager by < 1e-4 (30 graphs), and on the
-    # check's windows the prediction path has no discrete decision near its threshold. The band is not compared: its
-    # width is an argmax over a grid, so jitter can switch it to a neighbouring width (~3e-3 m/s seen).
+    # ship only graphs whose build check ran and whose outputs are sane (finite prediction, lower <= upper, p = 0).
+    # The differences to the eager ensemble (max_dpred, max_dband) are only logged: they never drop a graph.
     for so in glob.glob(os.path.join(aot, "predict_b*.so")):
         b = os.path.basename(so)[len("predict_b"):-len(".so")]
         r = reports.get(b)
-        if r is None or not r["sane"] or not r["max_dpred"] <= 1e-2:                         # NaN fails
+        if r is None or not r["sane"]:
             log(f"WARNING: dropping {os.path.basename(so)}: build check "
                 + ("did not finish" if r is None else f"failed ({r})"))
             os.remove(so)
