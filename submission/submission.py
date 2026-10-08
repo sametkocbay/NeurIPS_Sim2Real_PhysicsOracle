@@ -206,7 +206,7 @@ def _run(x):
 
 # ---------------------------------------------------------------------------------------------- eager fallback
 _ENS = None
-_FALLBACK_CHUNK = 10    # windows per eager forward: bounds GPU memory for any N (samples are independent)
+_FALLBACK_CHUNK = 100   # windows per eager forward: as fast as one pass (~5.7 ms/window), ~8.5 GiB peak for any N
 
 
 @torch.no_grad()
