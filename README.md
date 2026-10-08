@@ -108,7 +108,7 @@ The full run must log `compiled batch sizes: [1, 2, 3, 4, 5, 10]` and no `WARNIN
    docker inspect --format '{{index .RepoDigests 0}}' <dockerhub-user>/physicsoracle-t1:final   # name@sha256:...
    ```
 2. Upload `dist/final/physicsoracle_track1.zip`, built from the same package folder as the image, to Google Drive and create a share link.
-3. Email realpde-competition@googlegroups.com with the image name and digest (`<dockerhub-user>/physicsoracle-t1@sha256:...`), the Codabench submission id `948641`, and the Google Drive link.
+3. Email realpde-competition@googlegroups.com with the team name (PhysicsOracle), the Codabench username (`physicsoracle`, as in final/README.md), the track (Track 1: Simulation-to-Real), the image name and digest (`<dockerhub-user>/physicsoracle-t1@sha256:...`), the Codabench submission id `948641`, and the Google Drive link. This list follows the organizers' email of 29 September 2026, which asks for more fields than FINAL_SUBMISSION.md.
 
 ## Work on training locally
 
