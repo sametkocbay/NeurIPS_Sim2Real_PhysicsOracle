@@ -1,0 +1,120 @@
+{
+ "config": {
+  "core": {
+   "name": "axial",
+   "kwargs": {
+    "d": 128,
+    "heads": 8,
+    "depth": 6,
+    "grad_checkpoint": false,
+    "patch_t": 20,
+    "t2c": true,
+    "mlp_ratio": 8,
+    "norm": "rms",
+    "film_shared": true,
+    "spatial_attn": "axial",
+    "patch_h": 1,
+    "patch_w": 2
+   }
+  },
+  "model": {
+   "shrink": false,
+   "gamma": 0.75,
+   "baseline": {
+    "gamma0": 0.6,
+    "tau_star0": 0.3,
+    "damping": false,
+    "beta_mode": "const",
+    "beta0": 0.75,
+    "U0": 0.129,
+    "w": 0.05
+   }
+  },
+  "data": {
+   "real_frac": 0.75,
+   "sim_boost": 2.0,
+   "sim_stride": "auto",
+   "sim_mask": true,
+   "sim_dropout": true,
+   "sim_noise": true,
+   "use_sim": true,
+   "batch_size": 8,
+   "windows_per_epoch": 6000,
+   "limit_regimes": null,
+   "val_domains": [
+    "real"
+   ],
+   "num_workers": 8,
+   "sim_clock": false,
+   "mirror_aug": 0.5,
+   "train_all": true
+  },
+  "optim": {
+   "lr": 0.001,
+   "weight_decay": 0.05,
+   "warmup_epochs": 5,
+   "epochs": 100,
+   "grad_clip": 1.0,
+   "ema_decay": 0.9995,
+   "amp": true
+  },
+  "loss": {
+   "lambda_pin": 4.0,
+   "lambda_tke": 0.2,
+   "lambda_tmean": 0.0,
+   "lambda_probe": 0.0,
+   "pinball_detach_trunk": false,
+   "tke_horizon": "flat",
+   "tke_horizon_c": 2.0,
+   "lambda_tke_full": null,
+   "lambda_err": 0.0,
+   "lambda_sps": 1.0,
+   "sps_start_epoch": 40,
+   "sps_tau0": 0.02,
+   "sps_tau1": 0.001,
+   "sps_temp": 0.005,
+   "lambda_var": 0.0,
+   "var_eps": 0.0001,
+   "var_weight": "uniform",
+   "score_aligned": false,
+   "lambda_map": 0.0,
+   "map_start_epoch": 40,
+   "map_ramp_epochs": 10,
+   "map_lambda_log": 0.01,
+   "lambda_p": 0.0,
+   "lambda_wta": 0.0,
+   "wta_all": 0.05,
+   "lambda_es": 0.0
+  },
+  "decode": {
+   "err_scale": false,
+   "err_scale_k": 1.0
+  },
+  "eval": {
+   "every_epochs": 1,
+   "patience": 999,
+   "batch_size": null,
+   "save_every": 1,
+   "save_from": 59,
+   "save_to": 59,
+   "stop_after": 59
+  },
+  "wandb": {
+   "enabled": false,
+   "group": null,
+   "tags": []
+  },
+  "distill": {
+   "teacher_runs": null,
+   "teacher_ckpt": "best",
+   "alpha": 0.7,
+   "mode": "mean+Q",
+   "mix_pred": false,
+   "amp": true,
+   "fast": true
+  }
+ },
+ "fold": "full",
+ "seed": 3,
+ "name": "fm_all_s3"
+}

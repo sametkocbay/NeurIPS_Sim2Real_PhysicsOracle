@@ -1,0 +1,108 @@
+# Final PhysicsOracle model (NeurIPS 2026 RealPDE Track 1). Train two members, seeds 3 and 4:
+#   python -m rpde.train --config configs/final.yaml --fold full --seed 3 --name fm_all_s3
+#   python -m rpde.train --config configs/final.yaml --fold full --seed 4 --name fm_all_s4
+# and ship the EMA snapshot of epoch 59 of each (runs/<name>/ep59.pth). See final/METHOD.md, section 4.
+# The sections core ... wandb are the training recipe of one member (rpde.train). The section `submission` holds the
+# decisions of the final ensemble (solution.py, rpde/tools/fit_gate.py); rpde.train ignores it.
+core:
+  name: axial
+  kwargs:
+    d: 128             # token width
+    heads: 8
+    depth: 6           # axial transformer blocks
+    grad_checkpoint: false
+    patch_t: 20        # the 20 input frames are folded into one temporal token
+    t2c: true          # past frames -> channels
+    mlp_ratio: 8
+    norm: rms
+    film_shared: true  # one FiLM conditioning MLP shared by all blocks
+    spatial_attn: axial
+    patch_h: 1         # 1 x 2 spatial patches -> 32 x 32 tokens
+    patch_w: 2
+model:
+  shrink: false
+  gamma: 0.75          # fluctuation scale used for validation; the submission decodes at 0.70
+  baseline:            # advective (frozen-turbulence) baseline the network corrects
+    gamma0: 0.6
+    tau_star0: 0.3
+    damping: false
+    beta_mode: const
+    beta0: 0.75
+    U0: 0.129
+    w: 0.05
+data:
+  real_frac: 0.75      # 75 % real PIV windows, 25 % CFD windows per batch
+  sim_boost: 2.0
+  sim_stride: auto
+  sim_mask: true
+  sim_dropout: true
+  sim_noise: true
+  use_sim: true
+  batch_size: 8
+  windows_per_epoch: 6000
+  limit_regimes: null
+  val_domains:
+  - real
+  num_workers: 8
+  sim_clock: false
+  mirror_aug: 0.5      # mirror a training window in y (flow at -AoA) with p = 0.5
+  train_all: true      # train on 100 % of every trajectory (no frames held out)
+optim:
+  lr: 1.0e-3
+  weight_decay: 0.05
+  warmup_epochs: 5
+  epochs: 100          # cosine schedule over 100 epochs; the shipped weights are the EMA at epoch 59
+  grad_clip: 1.0
+  ema_decay: 0.9995
+  amp: true
+loss:
+  lambda_pin: 4.0      # quantile (pinball) loss of the band head
+  lambda_tke: 0.2
+  lambda_tmean: 0.0
+  lambda_probe: 0.0
+  pinball_detach_trunk: false
+  tke_horizon: flat
+  tke_horizon_c: 2.0
+  lambda_tke_full: null
+  lambda_err: 0.0
+  lambda_sps: 1.0      # differentiable SPS band reward, from epoch 40
+  sps_start_epoch: 40
+  sps_tau0: 0.02
+  sps_tau1: 0.001
+  sps_temp: 0.005
+  lambda_var: 0.0
+  var_eps: 0.0001
+  var_weight: uniform
+  score_aligned: false
+decode:
+  err_scale: false
+  err_scale_k: 1.0
+eval:
+  every_epochs: 1      # validation score is logged only; it does not steer training
+  patience: 999        # no early stopping
+  batch_size: null
+  save_every: 1
+  save_from: 59        # keep the EMA snapshot ep59.pth (the shipped epoch)
+  save_to: 59
+  stop_after: 59       # end the run after epoch 59 (the schedule still spans 100 epochs, so ep59 is unchanged)
+wandb:
+  enabled: false
+  group: null
+  tags: []
+submission:
+  seeds: [3, 4]        # one ensemble member per seed
+  epoch: 59            # EMA snapshot shipped from each member; equals eval.stop_after
+  decode:              # chosen on held-out Reynolds rows of train_real (final/METHOD.md, section 4)
+    gamma: 0.70        # prediction = mean + gamma * fluctuation
+    band_scale: 0.95   # scale of the band half-width that maximises the expected SPS reward
+    energy_preserve: true   # rescale the averaged fluctuation to the members' mean temporal energy
+  gate:                # gated decode above the training Reynolds range (rpde/gated_decode.py), chosen on held-out folds;
+                       # its data tables (aoa_keys, tops, centroids, sd) are fitted from train_real by rpde/tools/fit_gate.py
+    c1: -0.6           # lead-time decay of the fluctuation inside the gate: factor 1 + c1 * k / 19 at lead k
+    decay_lo: 0.0      # the decay acts for decay_lo < excess < decay_hi, excess in Re grid steps above the top
+    decay_hi: 1.75     #   training Re of the estimated angle
+    lam: 0.15          # shrink of the mean towards the measured mean for 0 < excess < decay_hi
+    lam_far: 0.25      # shrink beyond decay_hi
+    c1_out: -0.2       # small lead-time decay for every window outside the gate
+    re_step: 1275.0    # Reynolds grid step
+  compile_batches: ["5,10", "2,4", "3,1"]   # AOT-compiled batch sizes, one build per group

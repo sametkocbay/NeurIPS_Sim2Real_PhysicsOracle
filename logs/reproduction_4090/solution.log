@@ -1,0 +1,4 @@
+[solution 10:15:25] data_dir=/data output_dir=/output device=cuda smoke=False
+[solution 10:15:25] $ /opt/conda/bin/python tools/make_cache.py --raw /data --cache /output/work/cache32 --workers 16
+[solution 10:15:31] $ /opt/conda/bin/python -m rpde.train --config /workspace/configs/final.yaml --fold full --seed 3 --name fm_all_s3 --runs-dir /output/work/runs --device cuda
+[solution 11:48:15] $ /opt/conda/bin/python -m rpde.train --config /workspace/configs/final.yaml --fold full --seed 4 --name fm_all_s4 --runs-dir /output/work/runs --device cuda
